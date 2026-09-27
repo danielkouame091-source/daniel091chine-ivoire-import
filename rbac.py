@@ -9,10 +9,9 @@ Usage dans app.py :
         if require_permission("compta.view"):
             afficher_module_comptabilite(...)
 
-`require_permission` retourne False (et affiche un message + st.stop
-implicite au niveau de l'onglet si tu le souhaites) au lieu de planter
-toute l'appli — chaque onglet reste responsable d'arrêter son propre
-rendu.
+`require_permission` retourne False (et affiche un message) au lieu de
+planter toute l'appli — chaque onglet reste responsable d'arrêter son
+propre rendu.
 """
 
 import sqlite3
@@ -59,8 +58,8 @@ ROLES_PERMISSIONS = {
     },
 }
 
-# Ajout automatique de "compta.saisie_manuelle" et "compta.validate"
-# uniquement aux rôles comptables/admin pour éviter les écritures sauvages.
+# Ajout automatique de "compta.saisie_manuelle" uniquement aux rôles
+# comptables/admin pour éviter les écritures sauvages.
 ROLES_PERMISSIONS["Commissionnaire Agréé"] |= {"compta.saisie_manuelle"}
 
 
