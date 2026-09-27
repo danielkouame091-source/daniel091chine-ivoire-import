@@ -106,6 +106,33 @@ def creer_licence(db_name: str, entreprise: str, type_abonnement: str, contact_e
     return cle
 
 
+def _auto_provisionner_licence(db_name: str, licence_key: str, jours_validite: int = 3650) -> None:
+    """
+    Crée automatiquement une licence ACTIVE portant exactement la clé fournie
+    (au lieu d'en générer une aléatoire), avec une longue durée de validité
+    par défaut (~10 ans).
+
+    Pourquoi : `LICENCE_KEY` dans st.secrets est un réglage que TOI (le
+    fournisseur / développeur) contrôles — le stockage SQLite étant remis
+    à zéro à chaque redéploiement sur Streamlit Cloud, il faut que l'app se
+    re-crée elle-même une ligne correspondante au démarrage, sinon toute
+    licence créée manuellement via l'écran Admin disparaît au prochain
+    déploiement et te reverrouille dehors. Cette fonction ne s'exécute que
+    si la clé n'existe pas déjà en base (voir bloc_verification_licence).
+    """
+    date_debut = datetime.now()
+    date_fin = date_debut + timedelta(days=jours_validite)
+    conn = sqlite3.connect(db_name)
+    conn.execute(
+        """INSERT OR IGNORE INTO licences (entreprise, licence_key, type_abonnement, contact_email, montant, date_debut, date_fin, statut)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'Actif')""",
+        ("Propriétaire (auto-provisionné)", licence_key, "annuel", "", 0.0, date_debut.strftime("%Y-%m-%d"), date_fin.strftime("%Y-%m-%d")),
+    )
+    conn.commit()
+    conn.close()
+    _log_evenement(db_name, licence_key, "Auto-provisionnement", "Licence recréée automatiquement à partir de LICENCE_KEY (secrets) après réinitialisation du stockage.")
+
+
 def renouveler_licence(db_name: str, licence_key: str, type_abonnement: str | None = None) -> bool:
     conn = sqlite3.connect(db_name)
     row = conn.execute("SELECT date_fin, type_abonnement FROM licences WHERE licence_key=?", (licence_key,)).fetchone()
@@ -195,23 +222,58 @@ def bloc_verification_licence(db_name: str) -> bool:
     À appeler tout en haut de app.py, avant même l'écran de connexion.
     Bloque complètement l'app (st.stop()) si la licence n'est pas valide.
 
-    Exception (bootstrap) : si la table `licences` est encore totalement
-    vide (aucune licence créée nulle part), on laisse passer avec un
-    simple avertissement — sinon il serait impossible d'atteindre
-    l'écran Admin pour créer la toute première licence.
+    Deux mécanismes de secours pour éviter un blocage définitif :
+    1. Si aucun `LICENCE_KEY` n'est configuré dans les secrets ET qu'aucune
+       licence n'existe encore en base → accès libre temporaire (premier
+       lancement, avant même de savoir quelle clé utiliser).
+    2. Si un `LICENCE_KEY` est configuré mais introuvable en base → l'app le
+       provisionne automatiquement elle-même (voir _auto_provisionner_licence).
+       C'est nécessaire car le stockage SQLite de Streamlit Cloud est remis
+       à zéro à chaque redéploiement : sans cela, toute licence créée à la
+       main via l'écran Admin disparaîtrait au push de code suivant.
     """
     init_licences_tables(db_name)
 
-    if _aucune_licence_existante(db_name):
-        st.sidebar.warning(
-            "🔧 Aucune licence créée pour l'instant — accès libre temporaire. "
-            "Connectez-vous en Administrateur puis allez dans **Admin & Audit → Licences** "
-            "pour créer la première licence, puis ajoutez sa clé dans `LICENCE_KEY` (secrets)."
-        )
-        return True
-
     licence_key = st.secrets.get("LICENCE_KEY", "") if hasattr(st, "secrets") else ""
+
+    if not licence_key:
+        if _aucune_licence_existante(db_name):
+            st.sidebar.warning(
+                "🔧 Aucune licence créée pour l'instant — accès libre temporaire. "
+                "Connectez-vous en Administrateur puis allez dans **Admin & Audit → Licences** "
+                "pour créer la première licence, puis ajoutez sa clé dans `LICENCE_KEY` (secrets)."
+            )
+            return True
+        # Des licences existent déjà en base mais aucun secret n'est configuré
+        # sur CE déploiement : on ne peut pas savoir laquelle utiliser.
+        st.markdown(
+            """
+            <div style="max-width:600px;margin:100px auto;padding:30px;background:#1E293B;
+                        border:1px solid #7F1D1D;border-radius:16px;text-align:center;color:#F8FAFC;">
+                <h2 style="color:#F87171;">🔒 Accès Verrouillé</h2>
+                <p style="font-size:1.05rem;">Aucune clé de licence configurée (LICENCE_KEY manquante dans les secrets).</p>
+                <p style="color:#9CA3AF;font-size:0.85rem;">Ajoutez LICENCE_KEY = "..." dans les Secrets Streamlit Cloud.</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.stop()
+        return False
+
+    if _aucune_licence_existante(db_name):
+        # Table vide mais une clé EST configurée : c'est très probablement
+        # une réinitialisation du stockage après redéploiement. On se
+        # re-provisionne automatiquement avec cette même clé.
+        _auto_provisionner_licence(db_name, licence_key)
+
     resultat = verifier_licence(db_name, licence_key)
+
+    if not resultat["valide"] and resultat["message"] == "Clé de licence introuvable.":
+        # Filet de sécurité supplémentaire : la clé des secrets ne correspond
+        # à aucune ligne (ex: base repartie de zéro entre deux vérifications).
+        # On la provisionne et on revérifie une seule fois.
+        _auto_provisionner_licence(db_name, licence_key)
+        resultat = verifier_licence(db_name, licence_key)
 
     if resultat["alerte_anomalie"]:
         st.warning("⚠️ Anomalie détectée sur la vérification de licence (voir journal fournisseur).")
