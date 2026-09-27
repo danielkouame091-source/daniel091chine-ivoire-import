@@ -14,7 +14,6 @@ def check_hashes(password, hashed_text):
 
 
 # Base de données simulée des utilisateurs et de leurs rôles
-# Rôles : Administrateur, Vérificateur, Agent de Caisse, Commissionnaire agréé
 USERS_DB = {
     "admin": {
         "password": make_hashes("admin123"),
@@ -68,7 +67,7 @@ def main():
             and check_hashes(password, USERS_DB[username]["password"])
         ):
           st.session_state["logged_in"] = True
-          st.session_state["username"]Souhait = username
+          st.session_state["username"] = username
           st.session_state["role"] = USERS_DB[username]["role"]
           st.session_state["nom"] = USERS_DB[username]["nom"]
           st.success(f"Connexion réussie ! Bienvenue {st.session_state['nom']}")
@@ -110,7 +109,6 @@ def main():
 def render_admin_dashboard():
   st.title("Tableau de Bord - Administrateur")
   st.info("Accès complet aux paramètres du système, des utilisateurs et des logs.")
-  # Ajoutez ici la gestion des utilisateurs, les journaux d'audit, etc.
 
 
 def render_verificateur_dashboard():
@@ -119,7 +117,6 @@ def render_verificateur_dashboard():
       "Module Douane & SAD : Validation des déclarations et gestion des"
       " circuits de sélectivité."
   )
-  # Ajoutez ici le traitement des SAD et la validation des circuits (Vert, Bleu, Jaune, Rouge)
 
 
 def render_caisse_dashboard():
@@ -128,7 +125,6 @@ def render_caisse_dashboard():
       "Module Caisse & BAE : Enregistrement des quittances et édition du Bon à"
       " Enlever."
   )
-  # Ajoutez ici les quittances et la génération sécurisée du BAE
 
 
 def render_transit_dashboard():
@@ -137,7 +133,6 @@ def render_transit_dashboard():
       "Module Transit & Logistique : Suivi des dossiers, manifestes et calcul des"
       " surestaries."
   )
-  # Ajoutez ici la saisie des manifestes et des B/L
 
 
 if __name__ == "__main__":
