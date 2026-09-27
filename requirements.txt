@@ -8,4 +8,6 @@ groq
 bcrypt
 pyotp
 qrcode
-streamlit-option-menu
+numpy
+cryptography
+africastalking
