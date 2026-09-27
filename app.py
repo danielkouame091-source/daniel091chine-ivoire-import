@@ -1,14 +1,13 @@
 """
 app.py — BaobabVault ERP
-Orchestrateur principal : licence machine-locked, authentification avec
-verrouillage après 3 échecs + alerte, déblocage d'urgence fondateur,
-changement de mot de passe forcé à la première connexion, déconnexion
-automatique après inactivité, kill-switch d'urgence, et intégration
-sécurité / comptabilité / traçabilité.
+Orchestrateur principal : écran de connexion client par clé de licence,
+panneau fondateur, authentification avec verrouillage après 3 échecs +
+alerte, changement de mot de passe forcé à la première connexion,
+déconnexion automatique après inactivité, kill-switch d'urgence, et
+intégration sécurité / comptabilité / traçabilité.
 """
 
 import hashlib
-import hmac
 import sqlite3
 from datetime import datetime, timedelta
 
@@ -20,9 +19,56 @@ import licences
 import securite_bancaire as sec
 import tracabilite as tracker
 import comptabilite_syscohada as compta
+import fiscalite_ohada as fiscal
+import tresorerie
 import alertes
 
 st.set_page_config(page_title="BaobabVault ERP", page_icon="🛡️", layout="wide")
+
+# ======================================================================
+# STYLE — glassmorphism / neumorphism (relief), inspiré iOS
+# ======================================================================
+st.markdown("""
+<style>
+.stApp { background: radial-gradient(circle at 20% 0%, #10213b 0%, #060911 55%); color: #F8FAFC; font-family: 'Inter', system-ui, sans-serif; }
+
+.glass-card {
+    background: rgba(255,255,255,0.05);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 24px;
+    padding: 24px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.06);
+    transition: transform .18s ease, box-shadow .18s ease;
+    margin-bottom: 10px;
+}
+.glass-card:hover { transform: translateY(-4px); box-shadow: 0 16px 40px rgba(0,0,0,0.55); }
+.app-icon { font-size: 2.2rem; margin-bottom: 8px; }
+.app-title { font-size: 1.05rem; font-weight: 700; margin-bottom: 4px; }
+.app-desc { font-size: 0.82rem; color: #94A3B8; }
+
+/* Neumorphism sur les boutons Streamlit */
+div[data-testid="stButton"] > button {
+    border-radius: 16px !important;
+    background: linear-gradient(145deg, #16233d, #0c1526) !important;
+    box-shadow: 6px 6px 14px #04060c, -6px -6px 14px #1c2c4a !important;
+    border: 1px solid rgba(255,255,255,0.08) !important;
+    color: #F8FAFC !important;
+    transition: transform .15s ease !important;
+}
+div[data-testid="stButton"] > button:hover { transform: scale(1.02); }
+
+/* Metrics en relief */
+div[data-testid="stMetric"] {
+    background: rgba(255,255,255,0.04);
+    border-radius: 18px;
+    padding: 14px;
+    border: 1px solid rgba(255,255,255,0.08);
+    box-shadow: inset 1px 1px 3px rgba(255,255,255,0.06), 0 8px 16px rgba(0,0,0,0.3);
+}
+</style>
+""", unsafe_allow_html=True)
 
 # ======================================================================
 # CONSTANTES — DOIVENT être définies avant tout ce qui les utilise
@@ -69,9 +115,11 @@ if _param_url("bootstrap") == "1":
     with st.form("form_bootstrap_licence"):
         client = st.text_input("Nom du titulaire", value="Kouassi Kouame Daniel")
         type_ab = st.selectbox("Type d'abonnement", ["annuel", "mensuel", "essai"])
+        montant = st.number_input("Montant (FCFA)", min_value=0.0, step=10000.0)
+        telephone = st.text_input("Téléphone du titulaire (+225...)")
         submit = st.form_submit_button("Générer la licence", use_container_width=True)
     if submit:
-        cle = licences.creer_licence(LICENCES_DB, client, type_ab)
+        cle = licences.creer_licence(LICENCES_DB, client, type_ab, montant, telephone)
         st.success("Licence créée avec succès !")
         st.code(cle, language=None)
         st.warning(
@@ -82,53 +130,18 @@ if _param_url("bootstrap") == "1":
     st.stop()
 
 # ======================================================================
-# 0bis) DÉBLOCAGE D'URGENCE D'UN COMPTE — ?debloquer=1. Protégé par le
-#       même FOUNDER_PASSWORD que le panneau fondateur. Nécessaire car
-#       un compte verrouillé après 3 échecs n'a sinon AUCUN moyen de se
-#       débloquer lui-même — il faut un accès administrateur externe.
-# ======================================================================
-if _param_url("debloquer") == "1":
-    st.markdown("## 🔓 Déblocage d'urgence d'un compte utilisateur")
-    mdp_attendu = st.secrets.get("FOUNDER_PASSWORD", "") if hasattr(st, "secrets") else ""
-    if not mdp_attendu:
-        st.error("FOUNDER_PASSWORD n'est pas configuré dans les secrets — déblocage impossible.")
-        st.stop()
-
-    saisi = st.text_input("Mot de passe fondateur", type="password", key="debloquer_pwd")
-    if not saisi:
-        st.stop()
-    if not hmac.compare_digest(saisi, mdp_attendu):
-        st.error("Mot de passe incorrect.")
-        st.stop()
-
-    conn = sqlite3.connect(DB_NAME)
-    df_users = pd.read_sql_query("SELECT username, role, statut, echecs_consecutifs FROM users", conn)
-    conn.close()
-
-    if df_users.empty:
-        st.info("Aucun utilisateur en base pour l'instant.")
-        st.stop()
-
-    st.dataframe(df_users, use_container_width=True)
-    compte_sel = st.selectbox("Compte à débloquer", df_users["username"].tolist())
-    if st.button("🔓 Débloquer ce compte", use_container_width=True):
-        conn = sqlite3.connect(DB_NAME)
-        conn.execute("UPDATE users SET statut='Actif', echecs_consecutifs=0 WHERE username=?", (compte_sel,))
-        conn.commit(); conn.close()
-        sec.init_audit_chain(DB_NAME)
-        sec.log_action_immuable(DB_NAME, "FONDATEUR", "Déblocage d'urgence", f"Compte {compte_sel} débloqué manuellement")
-        st.success(f"Compte {compte_sel} débloqué. Reconnecte-toi via l'URL normale (sans paramètre).")
-    st.stop()
-
-# ======================================================================
 # 1) PANNEAU FONDATEUR (route cachée ?fondateur=1) — avant tout le reste
 # ======================================================================
 licences.panneau_fondateur_secret(LICENCES_DB)
 
 # ======================================================================
-# 2) LICENCE MACHINE-LOCKED — bloque l'app si invalide/expirée
+# 2) ÉCRAN DE CONNEXION CLIENT — clé de licence individuelle
+#    (générée depuis le panneau fondateur). Remplace l'ancien verrou
+#    machine-locked global pour les visiteurs normaux : chaque client
+#    entre SA propre clé, sans verrou d'empreinte machine (voir les
+#    notes en tête de licences.py).
 # ======================================================================
-licences.bloc_verification_licence(LICENCES_DB)
+licences.ecran_connexion_client(LICENCES_DB)
 
 
 def hash_password(pwd: str) -> str:
@@ -142,10 +155,14 @@ def init_db():
         role TEXT, statut TEXT DEFAULT 'Actif', echecs_consecutifs INTEGER DEFAULT 0,
         doit_changer_mdp INTEGER DEFAULT 0
     )""")
+    # Migration douce si la table existait déjà sans la colonne
     cols = [c[1] for c in conn.execute("PRAGMA table_info(users)").fetchall()]
     if "doit_changer_mdp" not in cols:
         conn.execute("ALTER TABLE users ADD COLUMN doit_changer_mdp INTEGER DEFAULT 0")
 
+    # Le compte admin par défaut DOIT changer son mot de passe à la
+    # première connexion — le mot de passe ci-dessous n'est qu'un
+    # mot de passe temporaire de démarrage, jamais un mot de passe final.
     conn.execute(
         "INSERT OR IGNORE INTO users (username, password_hash, role, statut, doit_changer_mdp) VALUES (?,?,?,?,1)",
         ("admin", hash_password("ChangeMoi2026!"), "Administrateur", "Actif"),
@@ -158,9 +175,17 @@ sec.init_audit_chain(DB_NAME)
 sec.init_transactions_table(DB_NAME)
 tracker.init_tracabilite_tables(DB_NAME)
 compta.init_compta_tables(DB_NAME)
+tresorerie.init_tresorerie_tables(DB_NAME)
 
 
 def envoyer_alerte_urgence(destinataire: str, message: str):
+    """
+    Alerte SMS réelle via Africa's Talking (voir alertes.py). Le numéro
+    du titulaire du compte devrait normalement être stocké sur son
+    profil utilisateur — ici, à défaut, on alerte le fondateur
+    (FOUNDER_PHONE) qui pourra relayer. Ne bloque jamais l'app si
+    l'API n'est pas configurée : l'alerte est alors seulement journalisée.
+    """
     resultat = alertes.alerte_urgence_founder(f"[{destinataire}] {message}")
     sec.log_action_immuable(
         DB_NAME, "système",
@@ -171,6 +196,7 @@ def envoyer_alerte_urgence(destinataire: str, message: str):
 
 
 def kill_switch_global():
+    """Gèle TOUS les comptes bancaires suivis, verrouille tous les utilisateurs, et alerte le fondateur par SMS."""
     conn = sqlite3.connect(DB_NAME)
     comptes = [r[0] for r in conn.execute("SELECT DISTINCT compte_source FROM transactions").fetchall()]
     conn.execute("UPDATE users SET statut='Bloqué'")
@@ -185,6 +211,7 @@ def kill_switch_global():
 
 
 def _regles_mot_de_passe_respectees(pwd: str) -> list[str]:
+    """Retourne la liste des règles NON respectées (vide = mot de passe valide)."""
     problemes = []
     if len(pwd) < 10:
         problemes.append("au moins 10 caractères")
@@ -224,7 +251,6 @@ if not st.session_state.authenticated:
             u_name, u_hash, u_role, u_statut, echecs, doit_changer = row
             if u_statut == "Bloqué":
                 st.error("🔒 Compte bloqué (trop d'échecs ou kill-switch actif). Contactez l'administrateur.")
-                st.caption("Déblocage : ouvrez l'URL de l'app avec `?debloquer=1` à la fin.")
             elif hash_password(password_input) == u_hash:
                 conn.execute("UPDATE users SET echecs_consecutifs=0 WHERE username=?", (u_name,))
                 conn.commit()
@@ -250,7 +276,9 @@ if not st.session_state.authenticated:
     st.stop()
 
 # ======================================================================
-# 3bis) CHANGEMENT DE MOT DE PASSE OBLIGATOIRE
+# 3bis) CHANGEMENT DE MOT DE PASSE OBLIGATOIRE (première connexion,
+#       ou tout compte marqué `doit_changer_mdp`) — bloque tout le
+#       reste de l'app tant que ce n'est pas fait.
 # ======================================================================
 if st.session_state.doit_changer_mdp:
     st.markdown("## 🔑 Changement de mot de passe obligatoire")
@@ -295,6 +323,8 @@ st.session_state.derniere_activite = maintenant
 # ======================================================================
 st.sidebar.markdown(f"**Utilisateur :** `{st.session_state.username}`")
 st.sidebar.markdown(f"**Rôle :** `{st.session_state.user_role}`")
+if st.session_state.get("licence_client_jours_restants") is not None:
+    st.sidebar.caption(f"🔑 Licence active — {st.session_state.licence_client_jours_restants} jour(s) restant(s)")
 st.sidebar.caption(f"Déconnexion automatique après {TIMEOUT_INACTIVITE_MINUTES} min d'inactivité")
 
 with st.sidebar.expander("🚨 Zone d'urgence"):
@@ -308,15 +338,57 @@ if st.sidebar.button("Déconnexion"):
     sec.log_action_immuable(DB_NAME, st.session_state.username, "Déconnexion", "Fin de session")
     st.session_state.authenticated = False
     st.rerun()
+st.sidebar.markdown("---")
 
-page = st.sidebar.radio("Navigation", [
-    "📈 Tableau de Bord", "📊 Comptabilité SYSCOHADA", "🕸️ Sécurité & AML",
-    "🌍 Traçabilité & Crédit Doc.", "🔗 Audit Immuable",
-])
+page_options = ["🏠 Accueil", "📈 Tableau de Bord", "📊 Comptabilité SYSCOHADA",
+                "🧾 Fiscalité OHADA", "💰 Trésorerie Multi-Comptes", "🕸️ Sécurité & AML",
+                "🌍 Traçabilité & Crédit Doc.", "🔗 Audit Immuable"]
+if st.session_state.user_role == "Administrateur":
+    page_options.append("👥 Gestion des Utilisateurs")
+
+if "nav_page" not in st.session_state:
+    st.session_state.nav_page = "🏠 Accueil"
+
+page = st.sidebar.radio("Navigation", page_options, key="nav_page")
 
 st.title("🛡️ BaobabVault ERP")
 
-if page == "📈 Tableau de Bord":
+# ------------------------------------------------------------------
+# ACCUEIL — grille façon iOS, chaque "icône" ouvre directement la
+# section correspondante en un clic.
+# ------------------------------------------------------------------
+if page == "🏠 Accueil":
+    st.caption(f"Bienvenue, {st.session_state.username}. Choisis un module ci-dessous.")
+    cartes = [
+        ("📈 Tableau de Bord", "Vue d'ensemble, transactions, projection de tendance"),
+        ("📊 Comptabilité SYSCOHADA", "Saisie, Grand Livre, Balance, rapprochement"),
+        ("🧾 Fiscalité OHADA", "TVA, IS/BIC, états financiers simplifiés"),
+        ("💰 Trésorerie Multi-Comptes", "Soldes et flux par compte bancaire"),
+        ("🕸️ Sécurité & AML", "Détection de motifs en cascade, comptes gelés"),
+        ("🌍 Traçabilité & Crédit Doc.", "Suivi GPS et déblocage de crédit documentaire"),
+        ("🔗 Audit Immuable", "Piste d'audit en chaîne de hachage"),
+    ]
+    if st.session_state.user_role == "Administrateur":
+        cartes.append(("👥 Gestion des Utilisateurs", "Créer, débloquer, réinitialiser les comptes"))
+
+    for i in range(0, len(cartes), 4):
+        cols = st.columns(4)
+        for col, (libelle_complet, desc) in zip(cols, cartes[i:i + 4]):
+            icone, titre = libelle_complet.split(" ", 1)
+            with col:
+                st.markdown(
+                    f"""<div class="glass-card">
+                        <div class="app-icon">{icone}</div>
+                        <div class="app-title">{titre}</div>
+                        <div class="app-desc">{desc}</div>
+                        </div>""",
+                    unsafe_allow_html=True,
+                )
+                if st.button("Ouvrir", key=f"ouvrir_{libelle_complet}", use_container_width=True):
+                    st.session_state.nav_page = libelle_complet
+                    st.rerun()
+
+elif page == "📈 Tableau de Bord":
     st.subheader("Vue d'ensemble")
     conn = sqlite3.connect(DB_NAME)
     df_tx = pd.read_sql_query("SELECT * FROM transactions", conn)
@@ -328,6 +400,7 @@ if page == "📈 Tableau de Bord":
         df_tx["mois"] = df_tx["timestamp"].dt.to_period("M").astype(str)
         totaux = df_tx.groupby("mois")["montant"].sum().reset_index()
         st.bar_chart(totaux.set_index("mois"))
+
         st.caption(
             "📊 Projection simple par régression linéaire sur l'historique — "
             "outil d'aide à la lecture, pas un modèle d'IA prédictif validé."
@@ -356,6 +429,12 @@ if page == "📈 Tableau de Bord":
 elif page == "📊 Comptabilité SYSCOHADA":
     compta.render(DB_NAME, username=st.session_state.username)
 
+elif page == "🧾 Fiscalité OHADA":
+    fiscal.render(DB_NAME)
+
+elif page == "💰 Trésorerie Multi-Comptes":
+    tresorerie.render(DB_NAME)
+
 elif page == "🕸️ Sécurité & AML":
     sec.render_module_amls(DB_NAME)
     st.markdown("---")
@@ -377,3 +456,67 @@ elif page == "🔗 Audit Immuable":
     df_audit = pd.read_sql_query("SELECT id, timestamp, username, action, details FROM audit_chain ORDER BY id DESC LIMIT 200", conn)
     conn.close()
     st.dataframe(df_audit, use_container_width=True)
+
+elif page == "👥 Gestion des Utilisateurs":
+    st.subheader("👥 Créer et Gérer les Comptes Utilisateurs")
+    st.caption(
+        "Un compte ici correspond à UNE personne qui se connecte sur l'écran de connexion "
+        "avec un identifiant et un mot de passe — à ne pas confondre avec la clé de licence "
+        "(celle-ci ne se saisit jamais ici, elle vit uniquement dans les Secrets Streamlit)."
+    )
+
+    with st.form("form_nouvel_utilisateur"):
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            nouveau_username = st.text_input("Identifiant (ex: sarl.import.export)")
+        with c2:
+            nouveau_password = st.text_input("Mot de passe temporaire", type="password")
+        with c3:
+            nouveau_role = st.selectbox("Rôle", ["Administrateur", "Agent", "Client"])
+        if st.form_submit_button("➕ Créer le compte"):
+            if not nouveau_username or not nouveau_password:
+                st.error("Identifiant et mot de passe requis.")
+            else:
+                problemes = _regles_mot_de_passe_respectees(nouveau_password)
+                if problemes:
+                    st.error("Le mot de passe temporaire doit contenir : " + ", ".join(problemes) + ".")
+                else:
+                    conn = sqlite3.connect(DB_NAME)
+                    try:
+                        # doit_changer_mdp=1 : le client sera forcé de choisir SON propre
+                        # mot de passe définitif dès sa première connexion.
+                        conn.execute(
+                            "INSERT INTO users (username, password_hash, role, statut, doit_changer_mdp) VALUES (?,?,?,'Actif',1)",
+                            (nouveau_username, hash_password(nouveau_password), nouveau_role),
+                        )
+                        conn.commit()
+                        sec.log_action_immuable(DB_NAME, st.session_state.username, "Création utilisateur", f"Compte {nouveau_username} créé ({nouveau_role})")
+                        st.success(f"Compte **{nouveau_username}** créé. Communique-lui son identifiant et ce mot de passe temporaire par un canal sûr — il devra le changer à sa première connexion.")
+                    except sqlite3.IntegrityError:
+                        st.error("Cet identifiant existe déjà.")
+                    conn.close()
+
+    st.markdown("---")
+    st.markdown("##### Comptes existants")
+    conn = sqlite3.connect(DB_NAME)
+    df_users = pd.read_sql_query("SELECT id, username, role, statut, echecs_consecutifs, doit_changer_mdp FROM users", conn)
+    conn.close()
+    st.dataframe(df_users, use_container_width=True)
+
+    if not df_users.empty:
+        user_sel = st.selectbox("Compte à administrer", df_users["username"].tolist())
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button("🔓 Réactiver et remettre le compteur d'échecs à zéro", use_container_width=True):
+                conn = sqlite3.connect(DB_NAME)
+                conn.execute("UPDATE users SET statut='Actif', echecs_consecutifs=0 WHERE username=?", (user_sel,))
+                conn.commit(); conn.close()
+                sec.log_action_immuable(DB_NAME, st.session_state.username, "Réactivation utilisateur", f"Compte {user_sel} débloqué manuellement")
+                st.success(f"Compte {user_sel} réactivé.")
+        with c2:
+            if st.button("🔁 Forcer un nouveau mot de passe à la prochaine connexion", use_container_width=True):
+                conn = sqlite3.connect(DB_NAME)
+                conn.execute("UPDATE users SET doit_changer_mdp=1 WHERE username=?", (user_sel,))
+                conn.commit(); conn.close()
+                sec.log_action_immuable(DB_NAME, st.session_state.username, "Forçage changement mdp", f"Compte {user_sel} devra changer son mot de passe")
+                st.success(f"{user_sel} devra définir un nouveau mot de passe à sa prochaine connexion.")
