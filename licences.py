@@ -208,3 +208,21 @@ def panneau_fondateur_secret(db_name: str):
             st.info("La licence se liera à la prochaine machine qui l'utilisera.")
 
     st.stop()  # le panneau fondateur ne doit jamais fusionner avec le reste de l'UI cliente
+def panneau_bootstrap_licence_UNE_SEULE_FOIS(db_name: str):
+    """
+    Page temporaire pour créer la toute première licence. Accès :
+    ?bootstrap=1 dans l'URL. À SUPPRIMER de app.py (et de ce fichier)
+    une fois ta licence obtenue — ne pas laisser cette route active.
+    """
+    if st.query_params.get("bootstrap") != "1":
+        return
+    st.markdown("## 🔧 Génération de la première licence")
+    with st.form("form_bootstrap"):
+        client = st.text_input("Nom du titulaire", value="Kouassi Kouame Daniel")
+        type_ab = st.selectbox("Type d'abonnement", ["annuel", "mensuel", "essai"])
+        if st.form_submit_button("Générer la licence"):
+            cle = creer_licence(db_name, client, type_ab)
+            st.success("Licence créée avec succès !")
+            st.code(cle, language=None)
+            st.warning("Copie cette clé MAINTENANT, puis supprime cette route de ton code (voir instructions).")
+    st.stop()
