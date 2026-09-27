@@ -22,6 +22,8 @@ from rbac import require_permission
 import comptabilite_syscohada as compta
 import fiscalite as fiscal
 import securite_bancaire as sec
+import licences
+import ui_composants as ui
 
 st.set_page_config(page_title="SNDGIR - Transit & Douanes Côte d'Ivoire", page_icon="🇨🇮", layout="wide")
 
@@ -41,6 +43,13 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 DB_NAME = "sndgir_national_customs.db"
+LICENCES_DB_NAME = "licences.db"  # base séparée — voir licences.py pour les limites de ce choix
+
+# ======================================================================
+# 0) VÉRIFICATION DE LICENCE — bloque tout le reste si non valide
+# ======================================================================
+licences.init_licences_tables(LICENCES_DB_NAME)
+licences.bloc_verification_licence(LICENCES_DB_NAME)  # st.stop() interne si licence invalide
 
 
 def hash_password(password: str) -> str:
@@ -234,7 +243,7 @@ def generer_facture_transit_pdf(dossier_id, client, article, total_douane, honor
         t,
     ]
     doc.build(elements)
-    return pdf_filename
+    return pdf_filename, total_general
 
 
 # ======================================================================
@@ -291,11 +300,31 @@ if not st.session_state.authenticated:
     st.stop()
 
 # ======================================================================
-# SIDEBAR
+# MENU VERTICAL (sidebar) — remplace les onglets horizontaux
 # ======================================================================
-st.sidebar.title("🇨🇮 SNDGIR & TRANSIT ERP")
 st.sidebar.markdown(f"**Utilisateur :** `{st.session_state.username}`")
 st.sidebar.markdown(f"**Rôle :** `{st.session_state.user_role}`")
+
+MENU_OPTIONS = [
+    "Dashboard & Marges",
+    "1. Manifeste & Fret",
+    "2. Déclaration SAD",
+    "3. Transit ERP & Facturation",
+    "4. Caisse & BAE",
+    "5. Comptabilité SYSCOHADA",
+    "6. Fiscalité & Trésor",
+    "7. Passerelle EDI",
+    "8. IDP OCR Cross-Check",
+    "9. Innovations",
+    "Admin & Audit",
+]
+MENU_ICONES = [
+    "bar-chart-fill", "ship", "file-earmark-text", "briefcase", "cash-coin",
+    "journal-text", "receipt", "arrow-left-right", "file-earmark-richtext",
+    "stars", "shield-lock",
+]
+selection = ui.menu_vertical("🇨🇮 SNDGIR & TRANSIT ERP", MENU_OPTIONS, MENU_ICONES, cle="menu_principal")
+
 st.sidebar.markdown("---")
 
 groq_default_key = st.secrets.get("GROQ_API_KEY", "") if hasattr(st, "secrets") else ""
@@ -308,68 +337,27 @@ taux_usd_xof = st.sidebar.number_input("1 USD (Dollar)", value=taux_devises_dict
 taux_eur_xof = st.sidebar.number_input("1 EUR (Euro)", value=taux_devises_dict["EUR"], step=0.1)
 st.sidebar.markdown("---")
 
-with st.sidebar:
-    st.subheader("🤖 Assistant IA Douanier Flottant")
-    with st.popover("💬 Ouvrir le Chatbot IA", use_container_width=True):
-        st.markdown("##### Assistant Virtuel SNDGIR")
-        prompt_ia = st.text_area(
-            "Posez votre question réglementaire :",
-            value="Quelles sont les conditions d'exonération pour le matériel topographique ?",
-            key="ai_prompt_floating",
-        )
-        if st.button("Interroger l'IA", key="btn_submit_ai_floating", use_container_width=True):
-            if not groq_api_key:
-                st.error("Veuillez configurer votre clé API Groq.")
-            elif Groq is None:
-                st.error("Le package `groq` n'est pas installé.")
-            else:
-                try:
-                    client_groq = Groq(api_key=groq_api_key)
-                    response = client_groq.chat.completions.create(
-                        model="llama3-70b-8192",
-                        messages=[
-                            {"role": "system", "content": "Vous êtes un expert supérieur des douanes et du commerce international en Côte d'Ivoire."},
-                            {"role": "user", "content": prompt_ia},
-                        ],
-                    )
-                    st.markdown("##### 💡 Réponse de l'Expert IA :")
-                    st.write(response.choices[0].message.content)
-                except Exception as e:
-                    st.error(f"Erreur lors de l'appel à l'API Groq : {e}")
-
-st.sidebar.markdown("---")
 if st.sidebar.button("🚪 Déconnexion", use_container_width=True):
     log_action_complet(st.session_state.username, "Déconnexion", "Fin de session")
     st.session_state.authenticated = False
     st.session_state.pwd_verified = False
     st.rerun()
 
+# Assistant IA flottant (bulle en bas à droite) — voir ui_composants.py
+ui.render_assistant_flottant(
+    groq_api_key,
+    systeme_prompt="Vous êtes un expert supérieur des douanes et du commerce international en Côte d'Ivoire.",
+)
+
 st.markdown(
-    """<div class="header-banner"><h1>🏛️ CÔTE D'IVOIRE : SYSTÈME DÉDOUANEMENT & TRANSIT ERP (v5.1)</h1>
+    """<div class="header-banner"><h1>🏛️ CÔTE D'IVOIRE : SYSTÈME DÉDOUANEMENT & TRANSIT ERP (v5.2)</h1>
     <p>Cargo, Sélectivité Douanière, Facturation Client, Surestaries, Comptabilité SYSCOHADA,
-    Fiscalité, RBAC, MFA & Audit Immuable</p></div>""",
+    Fiscalité, RBAC, MFA, Licences & Audit Immuable</p></div>""",
     unsafe_allow_html=True,
 )
 
-tabs_list = [
-    "📈 Dashboard & Marges",
-    "🚢 1. Manifeste & Fret",
-    "📋 2. Déclaration en Détail (SAD)",
-    "💼 3. Transit ERP & Facturation",
-    "💳 4. Caisse & BAE",
-    "📊 5. Comptabilité & SYSCOHADA",
-    "🧾 6. Fiscalité & Trésor",
-    "🔄 7. Passerelle EDI",
-    "📄 8. IDP OCR Cross-Check",
-    "🌐 9. Innovations",
-    "🔐 Admin & Audit",
-]
-tabs = st.tabs(tabs_list)
-(tab_dash, tab_manifeste, tab_sad, tab_transit_erp, tab_caisse,
- tab_compta, tab_fiscal, tab_edi, tab_ocr, tab_innov, tab_admin) = tabs
-
 # ---------------- DASHBOARD ----------------
-with tab_dash:
+if selection == "Dashboard & Marges":
     if require_permission("dashboard.view", DB_NAME):
         st.markdown('<div class="custom-card-3d">', unsafe_allow_html=True)
         st.subheader("📈 Performance Globale : Douanes & Agence de Transit")
@@ -397,7 +385,7 @@ with tab_dash:
         st.markdown("</div>", unsafe_allow_html=True)
 
 # ---------------- MANIFESTE & FRET ----------------
-with tab_manifeste:
+elif selection == "1. Manifeste & Fret":
     if require_permission("manifeste.view", DB_NAME):
         st.markdown('<div class="custom-card-3d">', unsafe_allow_html=True)
         st.subheader("🚢 Module Cargo : Manifestes Maritimes & Aériens")
@@ -451,7 +439,7 @@ with tab_manifeste:
         st.markdown("</div>", unsafe_allow_html=True)
 
 # ---------------- SAD ----------------
-with tab_sad:
+elif selection == "2. Déclaration SAD":
     if require_permission("sad.view", DB_NAME):
         st.markdown('<div class="custom-card-3d">', unsafe_allow_html=True)
         st.subheader("📋 Module Douane : Saisie du SAD & Sélectivité")
@@ -504,7 +492,7 @@ with tab_sad:
         st.markdown("</div>", unsafe_allow_html=True)
 
 # ---------------- TRANSIT ERP ----------------
-with tab_transit_erp:
+elif selection == "3. Transit ERP & Facturation":
     if require_permission("transit.view", DB_NAME):
         st.markdown('<div class="custom-card-3d">', unsafe_allow_html=True)
         st.subheader("💼 Module Transitaire : Facturation, Débours & Surestaries")
@@ -544,18 +532,22 @@ with tab_transit_erp:
                 total_facture_globale = d_douane + f_port + f_transport + c_xof + f_honoraires + tva_honoraires
                 st.markdown(f"#### **TOTAL FACTURE TRANSIT :** `{total_facture_globale:,.0f} FCFA`")
                 if require_permission("transit.facturer", DB_NAME) and st.button("📄 Mettre à Jour & Générer la Facture Client (PDF)", use_container_width=True):
+                    pdf_fac, total_general_facture = generer_facture_transit_pdf(sel_dos_id, row_t["client"], row_t["article"], d_douane, f_honoraires, f_port, f_transport, c_xof)
                     conn = sqlite3.connect(DB_NAME)
-                    conn.execute("UPDATE dossiers SET honoraires=?, frais_port=?, frais_transport=?, surestaries_xof=? WHERE id=?",
-                                 (f_honoraires, f_port, f_transport, c_xof, sel_dos_id))
+                    # BUG CORRIGÉ : total_facture et solde_du étaient auparavant ignorés ici,
+                    # donc l'onglet Caisse continuait d'afficher l'ancien montant (droits seuls).
+                    conn.execute(
+                        "UPDATE dossiers SET honoraires=?, frais_port=?, frais_transport=?, surestaries_xof=?, total_facture=?, solde_du=? WHERE id=?",
+                        (f_honoraires, f_port, f_transport, c_xof, total_general_facture, total_general_facture, sel_dos_id),
+                    )
                     conn.commit(); conn.close()
-                    pdf_fac = generer_facture_transit_pdf(sel_dos_id, row_t["client"], row_t["article"], d_douane, f_honoraires, f_port, f_transport, c_xof)
-                    log_action_complet(st.session_state.username, "Facturation Transit", f"Facture générée pour dossier #{sel_dos_id}")
+                    log_action_complet(st.session_state.username, "Facturation Transit", f"Facture générée pour dossier #{sel_dos_id} — Total {total_general_facture:,.0f} FCFA")
                     with open(pdf_fac, "rb") as fh:
                         st.download_button("📥 Télécharger la Facture Définitive Transitaire (PDF)", data=fh.read(), file_name=pdf_fac, mime="application/pdf", use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
 # ---------------- CAISSE & BAE ----------------
-with tab_caisse:
+elif selection == "4. Caisse & BAE":
     if require_permission("caisse.view", DB_NAME):
         st.markdown('<div class="custom-card-3d">', unsafe_allow_html=True)
         st.subheader("💳 Module Caisse & Bon à Enlever (BAE) Sécurisé")
@@ -594,45 +586,48 @@ with tab_caisse:
         st.markdown("</div>", unsafe_allow_html=True)
 
 # ---------------- COMPTABILITÉ SYSCOHADA ----------------
-with tab_compta:
+elif selection == "5. Comptabilité SYSCOHADA":
     st.markdown('<div class="custom-card-3d">', unsafe_allow_html=True)
     if require_permission("compta.view", DB_NAME):
         compta.render(DB_NAME, username=st.session_state.username)
     st.markdown("</div>", unsafe_allow_html=True)
 
 # ---------------- FISCALITÉ ----------------
-with tab_fiscal:
+elif selection == "6. Fiscalité & Trésor":
     st.markdown('<div class="custom-card-3d">', unsafe_allow_html=True)
     if require_permission("fiscal.view", DB_NAME):
         fiscal.render(DB_NAME)
     st.markdown("</div>", unsafe_allow_html=True)
 
 # ---------------- MODULES NON ENCORE IMPLÉMENTÉS (stubs honnêtes) ----------------
-with tab_edi:
+elif selection == "7. Passerelle EDI":
     st.markdown('<div class="custom-card-3d">', unsafe_allow_html=True)
     st.subheader("🔄 Passerelle EDI")
     st.warning("🚧 Module non implémenté dans cette version — prévu : échange de messages EDIFACT avec Webb Fontaine / GUCE, à cadrer avec le format d'échange exact attendu par la DGD.")
     st.markdown("</div>", unsafe_allow_html=True)
 
-with tab_ocr:
+elif selection == "8. IDP OCR Cross-Check":
     st.markdown('<div class="custom-card-3d">', unsafe_allow_html=True)
     st.subheader("📄 IDP OCR Cross-Check")
     st.warning("🚧 Module non implémenté dans cette version — le slider de sélectivité (onglet SAD) simule la divergence OCR, mais l'extraction réelle de facture (OCR) n'est pas branchée.")
     st.markdown("</div>", unsafe_allow_html=True)
 
-with tab_innov:
+elif selection == "9. Innovations":
     st.markdown('<div class="custom-card-3d">', unsafe_allow_html=True)
     st.subheader("🌐 Innovations")
     st.info("Espace réservé pour de futures fonctionnalités (à définir avec toi).")
     st.markdown("</div>", unsafe_allow_html=True)
 
 # ---------------- ADMIN & AUDIT ----------------
-with tab_admin:
+elif selection == "Admin & Audit":
     st.markdown('<div class="custom-card-3d">', unsafe_allow_html=True)
     if require_permission("admin.audit", DB_NAME):
-        st.subheader("👥 Utilisateurs & Rôles")
-        conn = sqlite3.connect(DB_NAME); df_users = pd.read_sql_query("SELECT id, username, role, statut FROM users", conn); conn.close()
-        st.dataframe(df_users, use_container_width=True)
-        st.markdown("---")
-        sec.render_audit_viewer(DB_NAME)
+        sous_tabs_admin = st.tabs(["👥 Utilisateurs & Rôles", "🔗 Audit Immuable", "🔑 Licences & Abonnements"])
+        with sous_tabs_admin[0]:
+            conn = sqlite3.connect(DB_NAME); df_users = pd.read_sql_query("SELECT id, username, role, statut FROM users", conn); conn.close()
+            st.dataframe(df_users, use_container_width=True)
+        with sous_tabs_admin[1]:
+            sec.render_audit_viewer(DB_NAME)
+        with sous_tabs_admin[2]:
+            licences.render_admin_licences(LICENCES_DB_NAME)
     st.markdown("</div>", unsafe_allow_html=True)
