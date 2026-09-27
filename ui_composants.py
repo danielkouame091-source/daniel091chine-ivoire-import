@@ -1,0 +1,153 @@
+"""
+ui_composants.py — Menu latéral vertical + Assistant IA flottant
+
+Dépendance recommandée (menu avec icônes, look pro) :
+    pip install streamlit-option-menu
+Si le package n'est pas installé, `menu_vertical()` bascule automatiquement
+sur un `st.sidebar.radio` classique — moins joli, mais l'app ne casse pas.
+"""
+
+import streamlit as st
+
+try:
+    from streamlit_option_menu import option_menu
+except ImportError:
+    option_menu = None
+
+
+def menu_vertical(titre: str, options: list[str], icones: list[str], cle: str = "menu_principal") -> str:
+    """
+    Menu vertical dans la sidebar. `icones` doit être une liste Bootstrap Icons
+    (https://icons.getbootstrap.com/), même longueur que `options`.
+    Retourne le libellé de l'option sélectionnée.
+    """
+    if option_menu is not None:
+        with st.sidebar:
+            selection = option_menu(
+                menu_title=titre,
+                options=options,
+                icons=icones,
+                menu_icon="grid-fill",
+                default_index=0,
+                key=cle,
+                styles={
+                    "container": {"padding": "6px", "background-color": "#0F172A", "border-radius": "14px"},
+                    "icon": {"color": "#38BDF8", "font-size": "16px"},
+                    "nav-link": {
+                        "font-size": "14px",
+                        "text-align": "left",
+                        "margin": "3px 0px",
+                        "border-radius": "10px",
+                        "color": "#F8FAFC",
+                        "--hover-color": "#1E293B",
+                    },
+                    "nav-link-selected": {"background-color": "#0284C7", "font-weight": "600"},
+                },
+            )
+        return selection
+
+    # Repli sans dépendance externe
+    st.sidebar.markdown(f"### {titre}")
+    return st.sidebar.radio("Navigation", options, key=cle, label_visibility="collapsed")
+
+
+def injecter_css_widget_flottant():
+    st.markdown("""
+    <style>
+    #chat-toggle-btn {
+        position: fixed; bottom: 24px; right: 24px; z-index: 999999;
+        width: 58px; height: 58px; border-radius: 50%;
+        background: linear-gradient(135deg, #0284C7, #047857);
+        box-shadow: 0 8px 20px rgba(0,0,0,0.5);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 26px; cursor: pointer; transition: transform 0.2s ease;
+        border: 2px solid rgba(255,255,255,0.15);
+    }
+    #chat-toggle-btn:hover { transform: scale(1.08); }
+
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(div.chat-panel-marker) {
+        position: fixed !important; bottom: 96px; right: 24px; z-index: 999998;
+        width: 360px; max-height: 520px; overflow-y: auto;
+        background: #0F172A; border: 1px solid #1E293B; border-radius: 18px;
+        padding: 14px; box-shadow: 0 20px 40px rgba(0,0,0,0.6);
+        animation: chatFadeIn 0.25s ease-out;
+    }
+    @keyframes chatFadeIn {
+        from { opacity: 0; transform: translateY(12px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    .chat-bubble-user { background:#0284C7; color:white; padding:8px 12px; border-radius:12px 12px 2px 12px; margin:6px 0; max-width:85%; margin-left:auto; font-size:0.88rem; }
+    .chat-bubble-ia { background:#1E293B; color:#F8FAFC; padding:8px 12px; border-radius:12px 12px 12px 2px; margin:6px 0; max-width:85%; font-size:0.88rem; }
+    </style>
+    """, unsafe_allow_html=True)
+
+
+def render_assistant_flottant(groq_api_key: str | None, systeme_prompt: str = "Tu es un assistant expert et concis."):
+    """
+    Widget de chat IA flottant en bas à droite. Ouverture/fermeture gérée
+    via st.session_state (pas de vrai JS→Python, donc un clic = un rerun
+    Streamlit standard, mais l'effet visuel reste fluide grâce au CSS).
+    """
+    injecter_css_widget_flottant()
+
+    if "chat_flottant_ouvert" not in st.session_state:
+        st.session_state.chat_flottant_ouvert = False
+    if "chat_flottant_historique" not in st.session_state:
+        st.session_state.chat_flottant_historique = []
+
+    icone = "✖️" if st.session_state.chat_flottant_ouvert else "💬"
+    col_espace, col_bouton = st.columns([20, 1])
+    with col_bouton:
+        st.markdown('<div id="chat-toggle-btn-wrapper"></div>', unsafe_allow_html=True)
+    if st.button(icone, key="btn_toggle_chat_flottant", help="Assistant IA"):
+        st.session_state.chat_flottant_ouvert = not st.session_state.chat_flottant_ouvert
+        st.rerun()
+
+    st.markdown("""
+    <style>
+    div[data-testid="column"]:has(#chat-toggle-btn-wrapper) button {
+        position: fixed !important; bottom: 24px; right: 24px; z-index: 999999;
+        width: 58px !important; height: 58px !important; border-radius: 50% !important;
+        background: linear-gradient(135deg, #0284C7, #047857) !important;
+        font-size: 24px !important; box-shadow: 0 8px 20px rgba(0,0,0,0.5) !important;
+        border: 2px solid rgba(255,255,255,0.15) !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    if not st.session_state.chat_flottant_ouvert:
+        return
+
+    with st.container(border=True):
+        st.markdown('<div class="chat-panel-marker"></div>', unsafe_allow_html=True)
+        st.markdown("##### 🤖 Assistant SNDGIR")
+
+        for msg in st.session_state.chat_flottant_historique[-12:]:
+            classe = "chat-bubble-user" if msg["role"] == "user" else "chat-bubble-ia"
+            st.markdown(f'<div class="{classe}">{msg["content"]}</div>', unsafe_allow_html=True)
+
+        question = st.text_input("Votre question…", key="chat_flottant_input", label_visibility="collapsed", placeholder="Écrire un message…")
+        envoyer = st.button("Envoyer", key="chat_flottant_envoyer", use_container_width=True)
+
+        if envoyer and question:
+            st.session_state.chat_flottant_historique.append({"role": "user", "content": question})
+            reponse = _appeler_ia(groq_api_key, systeme_prompt, question)
+            st.session_state.chat_flottant_historique.append({"role": "assistant", "content": reponse})
+            st.rerun()
+
+
+def _appeler_ia(groq_api_key: str | None, systeme_prompt: str, question: str) -> str:
+    if not groq_api_key:
+        return "⚠️ Clé API Groq non configurée (voir la barre latérale)."
+    try:
+        from groq import Groq
+        client = Groq(api_key=groq_api_key)
+        resp = client.chat.completions.create(
+            model="llama3-70b-8192",
+            messages=[{"role": "system", "content": systeme_prompt}, {"role": "user", "content": question}],
+        )
+        return resp.choices[0].message.content
+    except ImportError:
+        return "⚠️ Le package `groq` n'est pas installé."
+    except Exception as e:
+        return f"⚠️ Erreur : {e}"
