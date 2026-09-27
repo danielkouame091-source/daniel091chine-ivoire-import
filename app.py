@@ -1,13 +1,14 @@
 """
 app.py — BaobabVault ERP
 Orchestrateur principal : licence machine-locked, authentification avec
-verrouillage après 3 échecs + alerte, kill-switch d'urgence, et
-intégration des modules sécurité / comptabilité / traçabilité.
+verrouillage après 3 échecs + alerte, changement de mot de passe forcé
+à la première connexion, déconnexion automatique après inactivité,
+kill-switch d'urgence, et intégration sécurité / comptabilité / traçabilité.
 """
 
 import hashlib
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import numpy as np
 import pandas as pd
@@ -26,6 +27,7 @@ st.set_page_config(page_title="BaobabVault ERP", page_icon="🛡️", layout="wi
 # ======================================================================
 DB_NAME = "baobabvault_core.db"
 LICENCES_DB = "baobabvault_licences.db"
+TIMEOUT_INACTIVITE_MINUTES = 15
 
 licences.init_licences_tables(LICENCES_DB)
 
@@ -40,10 +42,8 @@ def _param_url(nom: str) -> str:
 
 
 # ======================================================================
-# 0) ASSISTANT DE PREMIÈRE LICENCE — intégré proprement, pas un bloc à
-#    déplacer soi-même. Accès : ?bootstrap=1 dans l'URL. Ne fait RIEN
-#    tant qu'il n'y a AUCUNE licence en base (donc pas de risque de
-#    laisser une porte ouverte une fois ta première licence créée).
+# 0) ASSISTANT DE PREMIÈRE LICENCE — ?bootstrap=1. Se désactive tout
+#    seul dès qu'une licence existe déjà en base.
 # ======================================================================
 if _param_url("bootstrap") == "1":
     conn = sqlite3.connect(LICENCES_DB)
@@ -75,8 +75,7 @@ if _param_url("bootstrap") == "1":
         st.warning(
             "Copie cette clé maintenant : va dans Manage app → Settings → Secrets "
             "et colle-la sous `LICENCE_KEY = \"...\"`. Une fois fait, recharge l'app "
-            "sans le paramètre `?bootstrap=1` — l'assistant se désactivera tout seul "
-            "puisqu'une licence existera désormais en base."
+            "sans le paramètre `?bootstrap=1`."
         )
     st.stop()
 
@@ -99,10 +98,21 @@ def init_db():
     conn = sqlite3.connect(DB_NAME)
     conn.execute("""CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password_hash TEXT,
-        role TEXT, statut TEXT DEFAULT 'Actif', echecs_consecutifs INTEGER DEFAULT 0
+        role TEXT, statut TEXT DEFAULT 'Actif', echecs_consecutifs INTEGER DEFAULT 0,
+        doit_changer_mdp INTEGER DEFAULT 0
     )""")
-    for u in [("admin", hash_password("ChangeMoi2026!"), "Administrateur", "Actif")]:
-        conn.execute("INSERT OR IGNORE INTO users (username, password_hash, role, statut) VALUES (?,?,?,?)", u)
+    # Migration douce si la table existait déjà sans la colonne
+    cols = [c[1] for c in conn.execute("PRAGMA table_info(users)").fetchall()]
+    if "doit_changer_mdp" not in cols:
+        conn.execute("ALTER TABLE users ADD COLUMN doit_changer_mdp INTEGER DEFAULT 0")
+
+    # Le compte admin par défaut DOIT changer son mot de passe à la
+    # première connexion — le mot de passe ci-dessous n'est qu'un
+    # mot de passe temporaire de démarrage, jamais un mot de passe final.
+    conn.execute(
+        "INSERT OR IGNORE INTO users (username, password_hash, role, statut, doit_changer_mdp) VALUES (?,?,?,?,1)",
+        ("admin", hash_password("ChangeMoi2026!"), "Administrateur", "Actif"),
+    )
     conn.commit(); conn.close()
 
 
@@ -145,6 +155,20 @@ def kill_switch_global():
     )
 
 
+def _regles_mot_de_passe_respectees(pwd: str) -> list[str]:
+    """Retourne la liste des règles NON respectées (vide = mot de passe valide)."""
+    problemes = []
+    if len(pwd) < 10:
+        problemes.append("au moins 10 caractères")
+    if not any(c.isupper() for c in pwd):
+        problemes.append("au moins une majuscule")
+    if not any(c.isdigit() for c in pwd):
+        problemes.append("au moins un chiffre")
+    if not any(not c.isalnum() for c in pwd):
+        problemes.append("au moins un caractère spécial")
+    return problemes
+
+
 # ======================================================================
 # 3) AUTHENTIFICATION avec verrouillage après 3 échecs + alerte
 # ======================================================================
@@ -152,6 +176,7 @@ if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
     st.session_state.username = ""
     st.session_state.user_role = ""
+    st.session_state.doit_changer_mdp = False
 
 if not st.session_state.authenticated:
     st.markdown("## 🛡️ BaobabVault ERP — Connexion Sécurisée")
@@ -161,14 +186,14 @@ if not st.session_state.authenticated:
     if st.button("Se connecter"):
         conn = sqlite3.connect(DB_NAME)
         row = conn.execute(
-            "SELECT username, password_hash, role, statut, echecs_consecutifs FROM users WHERE username=?",
+            "SELECT username, password_hash, role, statut, echecs_consecutifs, doit_changer_mdp FROM users WHERE username=?",
             (username_input,),
         ).fetchone()
 
         if not row:
             st.error("Identifiant inconnu.")
         else:
-            u_name, u_hash, u_role, u_statut, echecs = row
+            u_name, u_hash, u_role, u_statut, echecs, doit_changer = row
             if u_statut == "Bloqué":
                 st.error("🔒 Compte bloqué (trop d'échecs ou kill-switch actif). Contactez l'administrateur.")
             elif hash_password(password_input) == u_hash:
@@ -177,6 +202,8 @@ if not st.session_state.authenticated:
                 st.session_state.authenticated = True
                 st.session_state.username = u_name
                 st.session_state.user_role = u_role
+                st.session_state.doit_changer_mdp = bool(doit_changer)
+                st.session_state.derniere_activite = datetime.now()
                 sec.log_action_immuable(DB_NAME, u_name, "Connexion", "Accès accordé")
                 st.rerun()
             else:
@@ -194,10 +221,54 @@ if not st.session_state.authenticated:
     st.stop()
 
 # ======================================================================
+# 3bis) CHANGEMENT DE MOT DE PASSE OBLIGATOIRE (première connexion,
+#       ou tout compte marqué `doit_changer_mdp`) — bloque tout le
+#       reste de l'app tant que ce n'est pas fait.
+# ======================================================================
+if st.session_state.doit_changer_mdp:
+    st.markdown("## 🔑 Changement de mot de passe obligatoire")
+    st.warning("Ce compte utilise un mot de passe temporaire. Choisissez un mot de passe définitif avant de continuer.")
+    nouveau = st.text_input("Nouveau mot de passe", type="password", key="nouveau_mdp")
+    confirmation = st.text_input("Confirmer le nouveau mot de passe", type="password", key="confirmation_mdp")
+
+    if st.button("Valider le nouveau mot de passe"):
+        if nouveau != confirmation:
+            st.error("Les deux mots de passe ne correspondent pas.")
+        else:
+            problemes = _regles_mot_de_passe_respectees(nouveau)
+            if problemes:
+                st.error("Le mot de passe doit contenir : " + ", ".join(problemes) + ".")
+            else:
+                conn = sqlite3.connect(DB_NAME)
+                conn.execute(
+                    "UPDATE users SET password_hash=?, doit_changer_mdp=0 WHERE username=?",
+                    (hash_password(nouveau), st.session_state.username),
+                )
+                conn.commit(); conn.close()
+                sec.log_action_immuable(DB_NAME, st.session_state.username, "Changement mot de passe", "Mot de passe temporaire remplacé")
+                st.session_state.doit_changer_mdp = False
+                st.success("Mot de passe mis à jour.")
+                st.rerun()
+    st.stop()
+
+# ======================================================================
+# 3ter) DÉCONNEXION AUTOMATIQUE APRÈS INACTIVITÉ
+# ======================================================================
+derniere_activite = st.session_state.get("derniere_activite")
+maintenant = datetime.now()
+if derniere_activite and (maintenant - derniere_activite) > timedelta(minutes=TIMEOUT_INACTIVITE_MINUTES):
+    sec.log_action_immuable(DB_NAME, st.session_state.username, "Déconnexion auto", f"Inactivité > {TIMEOUT_INACTIVITE_MINUTES} min")
+    st.session_state.authenticated = False
+    st.warning(f"Session expirée après {TIMEOUT_INACTIVITE_MINUTES} minutes d'inactivité. Reconnectez-vous.")
+    st.stop()
+st.session_state.derniere_activite = maintenant
+
+# ======================================================================
 # 4) NAVIGATION
 # ======================================================================
 st.sidebar.markdown(f"**Utilisateur :** `{st.session_state.username}`")
 st.sidebar.markdown(f"**Rôle :** `{st.session_state.user_role}`")
+st.sidebar.caption(f"Déconnexion automatique après {TIMEOUT_INACTIVITE_MINUTES} min d'inactivité")
 
 with st.sidebar.expander("🚨 Zone d'urgence"):
     st.caption("Gèle tous les comptes suivis et verrouille tous les utilisateurs.")
