@@ -6,3 +6,5 @@ requests
 openpyxl
 groq
 bcrypt
+pyotp
+qrcode
