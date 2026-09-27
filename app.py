@@ -15,6 +15,20 @@ import streamlit as st
 
 import licences
 licences.panneau_bootstrap_licence_UNE_SEULE_FOIS(LICENCES_DB)
+# --- BLOC TEMPORAIRE : à retirer une fois la licence obtenue ---
+if st.query_params.get("bootstrap") == "1":
+    st.markdown("## 🔧 Génération de la première licence")
+    licences.init_licences_tables(LICENCES_DB)
+    with st.form("form_bootstrap_temp"):
+        client = st.text_input("Nom du titulaire", value="Kouassi Kouame Daniel")
+        type_ab = st.selectbox("Type d'abonnement", ["annuel", "mensuel", "essai"])
+        if st.form_submit_button("Générer la licence"):
+            cle = licences.creer_licence(LICENCES_DB, client, type_ab)
+            st.success("Licence créée avec succès !")
+            st.code(cle, language=None)
+            st.warning("Copie cette clé maintenant, puis supprime ce bloc de app.py.")
+    st.stop()
+# --- FIN BLOC TEMPORAIRE ---
 import securite_bancaire as sec
 import tracabilite as tracker
 import comptabilite_syscohada as compta
