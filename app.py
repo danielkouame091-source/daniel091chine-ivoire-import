@@ -1,8 +1,8 @@
 """
 app.py — BaobabVault ERP
 Orchestrateur principal : licence machine-locked, authentification avec
-verrouillage après 3 échecs + alerte simulée, kill-switch d'urgence,
-et intégration des modules sécurité / comptabilité / traçabilité.
+verrouillage après 3 échecs + alerte, kill-switch d'urgence, et
+intégration des modules sécurité / comptabilité / traçabilité.
 """
 
 import hashlib
@@ -14,21 +14,6 @@ import pandas as pd
 import streamlit as st
 
 import licences
-licences.panneau_bootstrap_licence_UNE_SEULE_FOIS(LICENCES_DB)
-# --- BLOC TEMPORAIRE : à retirer une fois la licence obtenue ---
-if st.query_params.get("bootstrap") == "1":
-    st.markdown("## 🔧 Génération de la première licence")
-    licences.init_licences_tables(LICENCES_DB)
-    with st.form("form_bootstrap_temp"):
-        client = st.text_input("Nom du titulaire", value="Kouassi Kouame Daniel")
-        type_ab = st.selectbox("Type d'abonnement", ["annuel", "mensuel", "essai"])
-        if st.form_submit_button("Générer la licence"):
-            cle = licences.creer_licence(LICENCES_DB, client, type_ab)
-            st.success("Licence créée avec succès !")
-            st.code(cle, language=None)
-            st.warning("Copie cette clé maintenant, puis supprime ce bloc de app.py.")
-    st.stop()
-# --- FIN BLOC TEMPORAIRE ---
 import securite_bancaire as sec
 import tracabilite as tracker
 import comptabilite_syscohada as compta
@@ -36,16 +21,72 @@ import alertes
 
 st.set_page_config(page_title="BaobabVault ERP", page_icon="🛡️", layout="wide")
 
+# ======================================================================
+# CONSTANTES — DOIVENT être définies avant tout ce qui les utilise
+# ======================================================================
 DB_NAME = "baobabvault_core.db"
 LICENCES_DB = "baobabvault_licences.db"
 
+licences.init_licences_tables(LICENCES_DB)
+
+
+def _param_url(nom: str) -> str:
+    """Lit un paramètre d'URL en gérant les deux API Streamlit (ancienne et récente)."""
+    try:
+        return st.query_params.get(nom, "")
+    except AttributeError:
+        valeurs = st.experimental_get_query_params().get(nom, [""])
+        return valeurs[0] if valeurs else ""
+
+
 # ======================================================================
-# 0) PANNEAU FONDATEUR (route cachée ?fondateur=1) — avant tout le reste
+# 0) ASSISTANT DE PREMIÈRE LICENCE — intégré proprement, pas un bloc à
+#    déplacer soi-même. Accès : ?bootstrap=1 dans l'URL. Ne fait RIEN
+#    tant qu'il n'y a AUCUNE licence en base (donc pas de risque de
+#    laisser une porte ouverte une fois ta première licence créée).
+# ======================================================================
+if _param_url("bootstrap") == "1":
+    conn = sqlite3.connect(LICENCES_DB)
+    nb_licences_existantes = conn.execute("SELECT COUNT(*) FROM licences").fetchone()[0]
+    conn.close()
+
+    if nb_licences_existantes > 0:
+        st.markdown(
+            """<div style="max-width:600px;margin:100px auto;padding:30px;background:#1E293B;
+            border:1px solid #334155;border-radius:16px;text-align:center;color:#F8FAFC;">
+            <h3>ℹ️ Assistant de première licence désactivé</h3>
+            <p>Une licence existe déjà en base. Utilise le panneau fondateur
+            (<code>?fondateur=1</code>) pour gérer les licences existantes.</p>
+            </div>""",
+            unsafe_allow_html=True,
+        )
+        st.stop()
+
+    st.markdown("## 🔧 Assistant de première licence")
+    st.caption("Cet assistant ne s'affiche que tant qu'aucune licence n'existe en base — une fois ta première licence créée, cette page se désactive d'elle-même.")
+    with st.form("form_bootstrap_licence"):
+        client = st.text_input("Nom du titulaire", value="Kouassi Kouame Daniel")
+        type_ab = st.selectbox("Type d'abonnement", ["annuel", "mensuel", "essai"])
+        submit = st.form_submit_button("Générer la licence", use_container_width=True)
+    if submit:
+        cle = licences.creer_licence(LICENCES_DB, client, type_ab)
+        st.success("Licence créée avec succès !")
+        st.code(cle, language=None)
+        st.warning(
+            "Copie cette clé maintenant : va dans Manage app → Settings → Secrets "
+            "et colle-la sous `LICENCE_KEY = \"...\"`. Une fois fait, recharge l'app "
+            "sans le paramètre `?bootstrap=1` — l'assistant se désactivera tout seul "
+            "puisqu'une licence existera désormais en base."
+        )
+    st.stop()
+
+# ======================================================================
+# 1) PANNEAU FONDATEUR (route cachée ?fondateur=1) — avant tout le reste
 # ======================================================================
 licences.panneau_fondateur_secret(LICENCES_DB)
 
 # ======================================================================
-# 1) LICENCE MACHINE-LOCKED
+# 2) LICENCE MACHINE-LOCKED — bloque l'app si invalide/expirée
 # ======================================================================
 licences.bloc_verification_licence(LICENCES_DB)
 
@@ -105,7 +146,7 @@ def kill_switch_global():
 
 
 # ======================================================================
-# 2) AUTHENTIFICATION avec verrouillage après 3 échecs + alerte
+# 3) AUTHENTIFICATION avec verrouillage après 3 échecs + alerte
 # ======================================================================
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
@@ -153,7 +194,7 @@ if not st.session_state.authenticated:
     st.stop()
 
 # ======================================================================
-# 3) NAVIGATION
+# 4) NAVIGATION
 # ======================================================================
 st.sidebar.markdown(f"**Utilisateur :** `{st.session_state.username}`")
 st.sidebar.markdown(f"**Rôle :** `{st.session_state.user_role}`")
