@@ -19,6 +19,13 @@ appelle par HTTPS — pas une DB locale au déploiement du client. Le code
 ci-dessous fonctionne tel quel en mode "DB partagée le temps de valider
 le concept", et est écrit pour être facile à brancher sur une vraie API
 plus tard (une seule fonction à remplacer : `verifier_licence`).
+
+⚠️ Bootstrap premier lancement : tant qu'AUCUNE licence n'existe encore
+dans `licences.db`, `bloc_verification_licence` laisse passer (avec un
+avertissement) au lieu de tout bloquer — sinon personne ne pourrait
+jamais atteindre l'écran Admin pour créer la toute première licence.
+Dès qu'une licence existe en base, ce mode de secours se désactive
+automatiquement et la vérification stricte reprend.
 """
 
 import secrets
@@ -67,6 +74,13 @@ def _log_evenement(db_name: str, licence_key: str, evenement: str, details: str)
     )
     conn.commit()
     conn.close()
+
+
+def _aucune_licence_existante(db_name: str) -> bool:
+    conn = sqlite3.connect(db_name)
+    nb = conn.execute("SELECT COUNT(*) FROM licences").fetchone()[0]
+    conn.close()
+    return nb == 0
 
 
 def generer_cle_licence() -> str:
@@ -180,7 +194,22 @@ def bloc_verification_licence(db_name: str) -> bool:
     """
     À appeler tout en haut de app.py, avant même l'écran de connexion.
     Bloque complètement l'app (st.stop()) si la licence n'est pas valide.
+
+    Exception (bootstrap) : si la table `licences` est encore totalement
+    vide (aucune licence créée nulle part), on laisse passer avec un
+    simple avertissement — sinon il serait impossible d'atteindre
+    l'écran Admin pour créer la toute première licence.
     """
+    init_licences_tables(db_name)
+
+    if _aucune_licence_existante(db_name):
+        st.sidebar.warning(
+            "🔧 Aucune licence créée pour l'instant — accès libre temporaire. "
+            "Connectez-vous en Administrateur puis allez dans **Admin & Audit → Licences** "
+            "pour créer la première licence, puis ajoutez sa clé dans `LICENCE_KEY` (secrets)."
+        )
+        return True
+
     licence_key = st.secrets.get("LICENCE_KEY", "") if hasattr(st, "secrets") else ""
     resultat = verifier_licence(db_name, licence_key)
 
