@@ -14,6 +14,7 @@ import pandas as pd
 import streamlit as st
 
 import licences
+licences.panneau_bootstrap_licence_UNE_SEULE_FOIS(LICENCES_DB)
 import securite_bancaire as sec
 import tracabilite as tracker
 import comptabilite_syscohada as compta
