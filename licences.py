@@ -3,6 +3,13 @@ licences.py — BaobabVault ERP
 Licence liée à l'empreinte matérielle (machine-locked) + panneau
 administrateur "fondateur" caché pour révoquer/bloquer à distance.
 
+Mise à jour sécurité :
+- Comparaison du mot de passe fondateur à temps constant (hmac.compare_digest)
+  au lieu de `==`/`!=`, pour éviter les attaques par mesure de timing.
+- Verrouillage du panneau fondateur après 3 échecs consécutifs, pendant
+  15 minutes (persisté en base, donc résistant à un simple rechargement
+  de page ou une nouvelle session de navigateur).
+
 ⚠️ Limite honnête : comme pour tout schéma SQLite embarqué dans le même
 process que l'app cliente, un client avec accès shell au conteneur
 pourrait théoriquement altérer sa propre ligne. Pour une vraie séparation
@@ -13,6 +20,7 @@ d'inviolabilité absolue.
 """
 
 import hashlib
+import hmac
 import platform
 import sqlite3
 import uuid
@@ -21,6 +29,8 @@ from datetime import datetime, timedelta
 import streamlit as st
 
 DUREE_JOURS = {"mensuel": 30, "annuel": 365, "essai": 14}
+SEUIL_TENTATIVES_FONDATEUR = 3
+DUREE_VERROUILLAGE_MINUTES = 15
 
 
 def empreinte_machine() -> str:
@@ -53,6 +63,14 @@ def init_licences_tables(db_name: str):
             timestamp TEXT, licence_key TEXT, evenement TEXT, details TEXT
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS fondateur_securite (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            tentatives INTEGER DEFAULT 0,
+            verrouille_jusqua TEXT
+        )
+    """)
+    conn.execute("INSERT OR IGNORE INTO fondateur_securite (id, tentatives, verrouille_jusqua) VALUES (1, 0, NULL)")
     conn.commit()
     conn.close()
 
@@ -147,25 +165,80 @@ def bloc_verification_licence(db_name: str) -> bool:
 
 
 # ------------------------------------------------------------------
+# SÉCURITÉ DU PANNEAU FONDATEUR — verrouillage après 3 échecs
+# ------------------------------------------------------------------
+def _etat_securite_fondateur(db_name: str):
+    init_licences_tables(db_name)
+    conn = sqlite3.connect(db_name)
+    row = conn.execute("SELECT tentatives, verrouille_jusqua FROM fondateur_securite WHERE id=1").fetchone()
+    conn.close()
+    return row  # (tentatives, verrouille_jusqua_str_ou_None)
+
+
+def _reinitialiser_securite_fondateur(db_name: str):
+    conn = sqlite3.connect(db_name)
+    conn.execute("UPDATE fondateur_securite SET tentatives=0, verrouille_jusqua=NULL WHERE id=1")
+    conn.commit(); conn.close()
+
+
+def _enregistrer_echec_fondateur(db_name: str) -> tuple[int, str | None]:
+    tentatives, _ = _etat_securite_fondateur(db_name)
+    tentatives += 1
+    verrou = None
+    if tentatives >= SEUIL_TENTATIVES_FONDATEUR:
+        verrou = (datetime.now() + timedelta(minutes=DUREE_VERROUILLAGE_MINUTES)).strftime("%Y-%m-%d %H:%M:%S")
+    conn = sqlite3.connect(db_name)
+    conn.execute("UPDATE fondateur_securite SET tentatives=?, verrouille_jusqua=? WHERE id=1", (tentatives, verrou))
+    conn.commit(); conn.close()
+    return tentatives, verrou
+
+
+# ------------------------------------------------------------------
 # PANNEAU FONDATEUR — caché, jamais dans le menu principal.
 # Accès : ajouter ?fondateur=1 à l'URL, puis saisir le mot de passe
 # stocké dans st.secrets["FOUNDER_PASSWORD"] (jamais en dur dans le code).
 # ------------------------------------------------------------------
 def panneau_fondateur_secret(db_name: str):
-    params = st.query_params
-    if params.get("fondateur") != "1":
+    try:
+        params = st.query_params
+        actif = params.get("fondateur") == "1"
+    except AttributeError:
+        actif = st.experimental_get_query_params().get("fondateur", [""])[0] == "1"
+    if not actif:
         return  # route cachée : ne s'affiche que si le paramètre est présent
 
     st.markdown("## 🕵️ Panneau Fondateur — Contrôle Total des Licences")
     mdp_attendu = st.secrets.get("FOUNDER_PASSWORD", "") if hasattr(st, "secrets") else ""
     if not mdp_attendu:
         st.error("FOUNDER_PASSWORD n'est pas configuré dans les secrets — panneau désactivé.")
-        return
+        st.stop()
+
+    tentatives, verrouille_jusqua = _etat_securite_fondateur(db_name)
+    if verrouille_jusqua:
+        fin_verrou = datetime.strptime(verrouille_jusqua, "%Y-%m-%d %H:%M:%S")
+        if datetime.now() < fin_verrou:
+            minutes_restantes = int((fin_verrou - datetime.now()).total_seconds() / 60) + 1
+            st.error(f"🔒 Panneau verrouillé après {SEUIL_TENTATIVES_FONDATEUR} échecs. Réessayez dans {minutes_restantes} minute(s).")
+            _log(db_name, "FONDATEUR", "🚨 Tentative pendant verrouillage", f"Accès refusé — verrouillé jusqu'à {verrouille_jusqua}")
+            st.stop()
+        else:
+            _reinitialiser_securite_fondateur(db_name)
 
     saisi = st.text_input("Mot de passe fondateur", type="password", key="fondateur_pwd")
-    if saisi != mdp_attendu:
-        if saisi:
-            st.error("Mot de passe incorrect.")
+    if saisi:
+        # Comparaison à temps constant : évite qu'un attaquant déduise le
+        # mot de passe en mesurant le temps de réponse caractère par caractère.
+        if hmac.compare_digest(saisi, mdp_attendu):
+            _reinitialiser_securite_fondateur(db_name)
+        else:
+            nouvelles_tentatives, verrou = _enregistrer_echec_fondateur(db_name)
+            _log(db_name, "FONDATEUR", "⚠️ Échec mot de passe", f"Tentative {nouvelles_tentatives}/{SEUIL_TENTATIVES_FONDATEUR}")
+            if verrou:
+                st.error(f"🔒 {SEUIL_TENTATIVES_FONDATEUR} échecs atteints — panneau verrouillé {DUREE_VERROUILLAGE_MINUTES} minutes.")
+            else:
+                st.error(f"Mot de passe incorrect ({nouvelles_tentatives}/{SEUIL_TENTATIVES_FONDATEUR} avant verrouillage).")
+            st.stop()
+    else:
         st.stop()
 
     init_licences_tables(db_name)
@@ -175,7 +248,19 @@ def panneau_fondateur_secret(db_name: str):
     conn.close()
     st.dataframe(df, use_container_width=True)
 
+    st.markdown("---")
+    st.markdown("##### ➕ Créer une nouvelle licence")
+    with st.form("form_nouvelle_licence_fondateur"):
+        client_nom = st.text_input("Nom du client")
+        type_ab = st.selectbox("Type d'abonnement", ["annuel", "mensuel", "essai"])
+        if st.form_submit_button("Générer"):
+            cle = creer_licence(db_name, client_nom, type_ab)
+            st.success(f"Licence créée pour {client_nom}")
+            st.code(cle, language=None)
+
     if not df.empty:
+        st.markdown("---")
+        st.markdown("##### ⚙️ Administrer une licence existante")
         cle_sel = st.selectbox("Licence à administrer", df["licence_key"].tolist())
         c1, c2, c3 = st.columns(3)
         with c1:
@@ -207,22 +292,11 @@ def panneau_fondateur_secret(db_name: str):
             _log(db_name, cle_sel, "Déverrouillage machine", "Empreinte machine réinitialisée pour transfert")
             st.info("La licence se liera à la prochaine machine qui l'utilisera.")
 
+    st.markdown("---")
+    st.markdown("##### 🕵️ Journal des événements de licence")
+    conn = sqlite3.connect(db_name)
+    df_ev = pd.read_sql_query("SELECT * FROM licence_evenements ORDER BY id DESC LIMIT 100", conn)
+    conn.close()
+    st.dataframe(df_ev, use_container_width=True)
+
     st.stop()  # le panneau fondateur ne doit jamais fusionner avec le reste de l'UI cliente
-def panneau_bootstrap_licence_UNE_SEULE_FOIS(db_name: str):
-    """
-    Page temporaire pour créer la toute première licence. Accès :
-    ?bootstrap=1 dans l'URL. À SUPPRIMER de app.py (et de ce fichier)
-    une fois ta licence obtenue — ne pas laisser cette route active.
-    """
-    if st.query_params.get("bootstrap") != "1":
-        return
-    st.markdown("## 🔧 Génération de la première licence")
-    with st.form("form_bootstrap"):
-        client = st.text_input("Nom du titulaire", value="Kouassi Kouame Daniel")
-        type_ab = st.selectbox("Type d'abonnement", ["annuel", "mensuel", "essai"])
-        if st.form_submit_button("Générer la licence"):
-            cle = creer_licence(db_name, client, type_ab)
-            st.success("Licence créée avec succès !")
-            st.code(cle, language=None)
-            st.warning("Copie cette clé MAINTENANT, puis supprime cette route de ton code (voir instructions).")
-    st.stop()
