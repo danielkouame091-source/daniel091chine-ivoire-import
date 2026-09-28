@@ -276,3 +276,8 @@ def _show_result(result: dict, show_sql: bool):
         if show_sql:
             with st.expander("Requête exécutée"):
                 st.code(result["sql"], language="sql")
+                def render_assistant_ia(db_name: str, show_sql: bool = True):
+    """Compatibilité avec l'appel existant dans app.py."""
+    global DB_PATH
+    DB_PATH = db_name
+    render_assistant(show_sql=show_sql)
