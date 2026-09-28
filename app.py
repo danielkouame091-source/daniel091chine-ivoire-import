@@ -1,9 +1,10 @@
 """
 app.py — BaobabVault ERP
-Orchestrateur principal : licence machine-locked, authentification avec
-verrouillage après 3 échecs + alerte, changement de mot de passe forcé
-à la première connexion, déconnexion automatique après inactivité,
-kill-switch d'urgence, et intégration sécurité / comptabilité / traçabilité.
+Orchestrateur principal : licence par session client (portail pro),
+authentification avec verrouillage après 3 échecs + alerte, changement
+de mot de passe forcé à la première connexion, déconnexion automatique
+après inactivité, kill-switch d'urgence, et intégration sécurité /
+comptabilité / traçabilité.
 """
 
 import hashlib
@@ -47,7 +48,6 @@ st.markdown("""
 .app-title { font-size: 1.05rem; font-weight: 700; margin-bottom: 4px; }
 .app-desc { font-size: 0.82rem; color: #94A3B8; }
 
-/* Neumorphism sur les boutons Streamlit */
 div[data-testid="stButton"] > button {
     border-radius: 16px !important;
     background: linear-gradient(145deg, #16233d, #0c1526) !important;
@@ -58,7 +58,6 @@ div[data-testid="stButton"] > button {
 }
 div[data-testid="stButton"] > button:hover { transform: scale(1.02); }
 
-/* Metrics en relief */
 div[data-testid="stMetric"] {
     background: rgba(255,255,255,0.04);
     border-radius: 18px;
@@ -70,7 +69,7 @@ div[data-testid="stMetric"] {
 """, unsafe_allow_html=True)
 
 # ======================================================================
-# CONSTANTES — DOIVENT être définies avant tout ce qui les utilise
+# CONSTANTES
 # ======================================================================
 DB_NAME = "baobabvault_core.db"
 LICENCES_DB = "baobabvault_licences.db"
@@ -80,7 +79,6 @@ licences.init_licences_tables(LICENCES_DB)
 
 
 def _param_url(nom: str) -> str:
-    """Lit un paramètre d'URL en gérant les deux API Streamlit (ancienne et récente)."""
     try:
         return st.query_params.get(nom, "")
     except AttributeError:
@@ -110,10 +108,13 @@ if _param_url("bootstrap") == "1":
         st.stop()
 
     st.markdown("## 🔧 Assistant de première licence")
-    st.caption("Cet assistant ne s'affiche que tant qu'aucune licence n'existe en base — une fois ta première licence créée, cette page se désactive d'elle-même.")
+    st.caption(
+        "Cet assistant ne s'affiche que tant qu'aucune licence n'existe en base — "
+        "une fois ta première licence créée, cette page se désactive d'elle-même."
+    )
     with st.form("form_bootstrap_licence"):
         client = st.text_input("Nom du titulaire", value="Kouassi Kouame Daniel")
-        type_ab = st.selectbox("Type d'abonnement", ["annuel", "mensuel", "essai"])
+        type_ab = st.selectbox("Durée", list(licences.DUREE_JOURS.keys()))
         montant = st.number_input("Montant (FCFA)", min_value=0.0, step=10000.0)
         telephone = st.text_input("Téléphone du titulaire (+225...)")
         submit = st.form_submit_button("Générer la licence", use_container_width=True)
@@ -121,11 +122,7 @@ if _param_url("bootstrap") == "1":
         cle = licences.creer_licence(LICENCES_DB, client, type_ab, montant, telephone)
         st.success("Licence créée avec succès !")
         st.code(cle, language=None)
-        st.warning(
-            "Copie cette clé maintenant : va dans Manage app → Settings → Secrets "
-            "et colle-la sous `LICENCE_KEY = \"...\"`. Une fois fait, recharge l'app "
-            "sans le paramètre `?bootstrap=1`."
-        )
+        st.info("Communique cette clé au titulaire : c'est tout ce dont il a besoin pour se connecter sur l'écran d'activation.")
     st.stop()
 
 # ======================================================================
@@ -134,7 +131,7 @@ if _param_url("bootstrap") == "1":
 licences.panneau_fondateur_secret(LICENCES_DB)
 
 # ======================================================================
-# 2) LICENCE MACHINE-LOCKED — bloque l'app si invalide/expirée
+# 2) LICENCE PAR SESSION CLIENT — bloque l'app si absente/invalide/expirée
 # ======================================================================
 licences.bloc_verification_licence(LICENCES_DB)
 
@@ -150,19 +147,16 @@ def init_db():
         role TEXT, statut TEXT DEFAULT 'Actif', echecs_consecutifs INTEGER DEFAULT 0,
         doit_changer_mdp INTEGER DEFAULT 0
     )""")
-    # Migration douce si la table existait déjà sans la colonne
     cols = [c[1] for c in conn.execute("PRAGMA table_info(users)").fetchall()]
     if "doit_changer_mdp" not in cols:
         conn.execute("ALTER TABLE users ADD COLUMN doit_changer_mdp INTEGER DEFAULT 0")
 
-    # Le compte admin par défaut DOIT changer son mot de passe à la
-    # première connexion — le mot de passe ci-dessous n'est qu'un
-    # mot de passe temporaire de démarrage, jamais un mot de passe final.
     conn.execute(
         "INSERT OR IGNORE INTO users (username, password_hash, role, statut, doit_changer_mdp) VALUES (?,?,?,?,1)",
         ("admin", hash_password("ChangeMoi2026!"), "Administrateur", "Actif"),
     )
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
 
 
 init_db()
@@ -174,13 +168,6 @@ tresorerie.init_tresorerie_tables(DB_NAME)
 
 
 def envoyer_alerte_urgence(destinataire: str, message: str):
-    """
-    Alerte SMS réelle via Africa's Talking (voir alertes.py). Le numéro
-    du titulaire du compte devrait normalement être stocké sur son
-    profil utilisateur — ici, à défaut, on alerte le fondateur
-    (FOUNDER_PHONE) qui pourra relayer. Ne bloque jamais l'app si
-    l'API n'est pas configurée : l'alerte est alors seulement journalisée.
-    """
     resultat = alertes.alerte_urgence_founder(f"[{destinataire}] {message}")
     sec.log_action_immuable(
         DB_NAME, "système",
@@ -191,11 +178,11 @@ def envoyer_alerte_urgence(destinataire: str, message: str):
 
 
 def kill_switch_global():
-    """Gèle TOUS les comptes bancaires suivis, verrouille tous les utilisateurs, et alerte le fondateur par SMS."""
     conn = sqlite3.connect(DB_NAME)
     comptes = [r[0] for r in conn.execute("SELECT DISTINCT compte_source FROM transactions").fetchall()]
     conn.execute("UPDATE users SET statut='Bloqué'")
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
     for c in comptes:
         sec.geler_compte(DB_NAME, c, "KILL-SWITCH D'URGENCE déclenché")
     sec.log_action_immuable(DB_NAME, st.session_state.get("username", "admin"), "🚨 KILL-SWITCH", "Gel total déclenché manuellement")
@@ -206,7 +193,6 @@ def kill_switch_global():
 
 
 def _regles_mot_de_passe_respectees(pwd: str) -> list[str]:
-    """Retourne la liste des règles NON respectées (vide = mot de passe valide)."""
     problemes = []
     if len(pwd) < 10:
         problemes.append("au moins 10 caractères")
@@ -271,9 +257,7 @@ if not st.session_state.authenticated:
     st.stop()
 
 # ======================================================================
-# 3bis) CHANGEMENT DE MOT DE PASSE OBLIGATOIRE (première connexion,
-#       ou tout compte marqué `doit_changer_mdp`) — bloque tout le
-#       reste de l'app tant que ce n'est pas fait.
+# 3bis) CHANGEMENT DE MOT DE PASSE OBLIGATOIRE
 # ======================================================================
 if st.session_state.doit_changer_mdp:
     st.markdown("## 🔑 Changement de mot de passe obligatoire")
@@ -294,7 +278,8 @@ if st.session_state.doit_changer_mdp:
                     "UPDATE users SET password_hash=?, doit_changer_mdp=0 WHERE username=?",
                     (hash_password(nouveau), st.session_state.username),
                 )
-                conn.commit(); conn.close()
+                conn.commit()
+                conn.close()
                 sec.log_action_immuable(DB_NAME, st.session_state.username, "Changement mot de passe", "Mot de passe temporaire remplacé")
                 st.session_state.doit_changer_mdp = False
                 st.success("Mot de passe mis à jour.")
@@ -320,6 +305,7 @@ st.sidebar.markdown(f"**Utilisateur :** `{st.session_state.username}`")
 st.sidebar.markdown(f"**Rôle :** `{st.session_state.user_role}`")
 st.sidebar.caption(f"Déconnexion automatique après {TIMEOUT_INACTIVITE_MINUTES} min d'inactivité")
 licences.afficher_statut_licence_sidebar(LICENCES_DB)
+licences.deconnexion_licence_sidebar(LICENCES_DB)
 
 with st.sidebar.expander("🚨 Zone d'urgence"):
     st.caption("Gèle tous les comptes suivis et verrouille tous les utilisateurs.")
@@ -340,6 +326,17 @@ page_options = ["🏠 Accueil", "📈 Tableau de Bord", "📊 Comptabilité SYSC
 if st.session_state.user_role == "Administrateur":
     page_options.append("👥 Gestion des Utilisateurs")
 
+# --- Correction du conflit de widget -----------------------------------
+# On résout toute navigation "en attente" (déclenchée par un clic sur
+# "Ouvrir" dans la grille d'accueil) AVANT de créer le widget radio lié
+# à la clé "nav_page". On n'écrit JAMAIS dans st.session_state.nav_page
+# après que ce widget a été instancié dans le même run : c'est exactement
+# ce qui causait le StreamlitWidgetAlreadyInstantiatedError.
+if "_pending_nav" in st.session_state:
+    demande = st.session_state.pop("_pending_nav")
+    if demande in page_options:
+        st.session_state["nav_page"] = demande
+
 if "nav_page" not in st.session_state:
     st.session_state.nav_page = "🏠 Accueil"
 
@@ -348,8 +345,7 @@ page = st.sidebar.radio("Navigation", page_options, key="nav_page")
 st.title("🛡️ BaobabVault ERP")
 
 # ------------------------------------------------------------------
-# ACCUEIL — grille façon iOS, chaque "icône" ouvre directement la
-# section correspondante en un clic.
+# ACCUEIL — grille façon iOS
 # ------------------------------------------------------------------
 if page == "🏠 Accueil":
     st.caption(f"Bienvenue, {st.session_state.username}. Choisis un module ci-dessous.")
@@ -379,7 +375,7 @@ if page == "🏠 Accueil":
                     unsafe_allow_html=True,
                 )
                 if st.button("Ouvrir", key=f"ouvrir_{libelle_complet}", use_container_width=True):
-                    st.session_state.nav_page = libelle_complet
+                    st.session_state["_pending_nav"] = libelle_complet
                     st.rerun()
 
 elif page == "📈 Tableau de Bord":
@@ -456,7 +452,7 @@ elif page == "👥 Gestion des Utilisateurs":
     st.caption(
         "Un compte ici correspond à UNE personne qui se connecte sur l'écran de connexion "
         "avec un identifiant et un mot de passe — à ne pas confondre avec la clé de licence "
-        "(celle-ci ne se saisit jamais ici, elle vit uniquement dans les Secrets Streamlit)."
+        "(celle-ci se saisit sur le portail d'activation, jamais ici)."
     )
 
     with st.form("form_nouvel_utilisateur"):
@@ -477,8 +473,6 @@ elif page == "👥 Gestion des Utilisateurs":
                 else:
                     conn = sqlite3.connect(DB_NAME)
                     try:
-                        # doit_changer_mdp=1 : le client sera forcé de choisir SON propre
-                        # mot de passe définitif dès sa première connexion.
                         conn.execute(
                             "INSERT INTO users (username, password_hash, role, statut, doit_changer_mdp) VALUES (?,?,?,'Actif',1)",
                             (nouveau_username, hash_password(nouveau_password), nouveau_role),
@@ -504,13 +498,15 @@ elif page == "👥 Gestion des Utilisateurs":
             if st.button("🔓 Réactiver et remettre le compteur d'échecs à zéro", use_container_width=True):
                 conn = sqlite3.connect(DB_NAME)
                 conn.execute("UPDATE users SET statut='Actif', echecs_consecutifs=0 WHERE username=?", (user_sel,))
-                conn.commit(); conn.close()
+                conn.commit()
+                conn.close()
                 sec.log_action_immuable(DB_NAME, st.session_state.username, "Réactivation utilisateur", f"Compte {user_sel} débloqué manuellement")
                 st.success(f"Compte {user_sel} réactivé.")
         with c2:
             if st.button("🔁 Forcer un nouveau mot de passe à la prochaine connexion", use_container_width=True):
                 conn = sqlite3.connect(DB_NAME)
                 conn.execute("UPDATE users SET doit_changer_mdp=1 WHERE username=?", (user_sel,))
-                conn.commit(); conn.close()
+                conn.commit()
+                conn.close()
                 sec.log_action_immuable(DB_NAME, st.session_state.username, "Forçage changement mdp", f"Compte {user_sel} devra changer son mot de passe")
                 st.success(f"{user_sel} devra définir un nouveau mot de passe à sa prochaine connexion.")
