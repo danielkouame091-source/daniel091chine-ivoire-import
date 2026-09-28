@@ -39,7 +39,7 @@ theme.inject_apple_theme()
 DB_NAME = "baobabvault_core.db"
 LICENCES_DB = "baobabvault_licences.db"
 TIMEOUT_INACTIVITE_MINUTES = 15
-URL_VERIFICATION_BASE = "https://tonapp.streamlit.app/?verifier=1"  # à adapter à ton domaine réel
+URL_VERIFICATION_BASE = "https://tonapp.streamlit.app/?verifier=1"  # À adapter à ton domaine réel
 
 licences.init_licences_tables(LICENCES_DB)
 
@@ -107,21 +107,29 @@ def hash_password(pwd: str) -> str:
 
 def init_db():
     conn = sqlite3.connect(DB_NAME)
-    conn.execute("""CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password_hash TEXT,
-        role TEXT, statut TEXT DEFAULT 'Actif', echecs_consecutifs INTEGER DEFAULT 0,
-        doit_changer_mdp INTEGER DEFAULT 0
-    )""")
-    cols = [c[1] for c in conn.execute("PRAGMA table_info(users)").fetchall()]
-    if "doit_changer_mdp" not in cols:
-        conn.execute("ALTER TABLE users ADD COLUMN doit_changer_mdp INTEGER DEFAULT 0")
+    try:
+        conn.execute("""CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, 
+            username TEXT UNIQUE, 
+            password_hash TEXT,
+            role TEXT, 
+            statut TEXT DEFAULT 'Actif', 
+            echecs_consecutifs INTEGER DEFAULT 0,
+            doit_changer_mdp INTEGER DEFAULT 0
+        )""")
+        
+        # Vérification et migration de la colonne si elle n'existe pas
+        cols = [c[1] for c in conn.execute("PRAGMA table_info(users)").fetchall()]
+        if "doit_changer_mdp" not in cols:
+            conn.execute("ALTER TABLE users ADD COLUMN doit_changer_mdp INTEGER DEFAULT 0")
 
-    conn.execute(
-        "INSERT OR IGNORE INTO users (username, password_hash, role, statut, doit_changer_mdp) VALUES (?,?,?,?,1)",
-        ("admin", hash_password("ChangeMoi2026!"), "Administrateur", "Actif"),
-    )
-    conn.commit()
-    conn.close()
+        conn.execute(
+            "INSERT OR IGNORE INTO users (username, password_hash, role, statut, doit_changer_mdp) VALUES (?,?,?,?,1)",
+            ("admin", hash_password("ChangeMoi2026!"), "Administrateur", "Actif"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 init_db()
@@ -149,12 +157,16 @@ def envoyer_alerte_urgence(destinataire: str, message: str):
 
 def kill_switch_global():
     conn = sqlite3.connect(DB_NAME)
-    comptes = [r[0] for r in conn.execute("SELECT DISTINCT compte_source FROM transactions").fetchall()]
-    conn.execute("UPDATE users SET statut='Bloqué'")
-    conn.commit()
-    conn.close()
+    try:
+        comptes = [r[0] for r in conn.execute("SELECT DISTINCT compte_source FROM transactions").fetchall()]
+        conn.execute("UPDATE users SET statut='Bloqué'")
+        conn.commit()
+    finally:
+        conn.close()
+
     for c in comptes:
         sec.geler_compte(DB_NAME, c, "KILL-SWITCH D'URGENCE déclenché")
+
     sec.log_action_immuable(DB_NAME, st.session_state.get("username", "admin"), "🚨 KILL-SWITCH", "Gel total déclenché manuellement")
     envoyer_alerte_urgence(
         st.session_state.get("username", "admin"),
@@ -191,39 +203,41 @@ if not st.session_state.authenticated:
 
     if st.button("Se connecter"):
         conn = sqlite3.connect(DB_NAME)
-        row = conn.execute(
-            "SELECT username, password_hash, role, statut, echecs_consecutifs, doit_changer_mdp FROM users WHERE username=?",
-            (username_input,),
-        ).fetchone()
+        try:
+            row = conn.execute(
+                "SELECT username, password_hash, role, statut, echecs_consecutifs, doit_changer_mdp FROM users WHERE username=?",
+                (username_input,),
+            ).fetchone()
 
-        if not row:
-            st.error("Identifiant inconnu.")
-        else:
-            u_name, u_hash, u_role, u_statut, echecs, doit_changer = row
-            if u_statut == "Bloqué":
-                st.error("🔒 Compte bloqué (trop d'échecs ou kill-switch actif). Contactez l'administrateur.")
-            elif hash_password(password_input) == u_hash:
-                conn.execute("UPDATE users SET echecs_consecutifs=0 WHERE username=?", (u_name,))
-                conn.commit()
-                st.session_state.authenticated = True
-                st.session_state.username = u_name
-                st.session_state.user_role = u_role
-                st.session_state.doit_changer_mdp = bool(doit_changer)
-                st.session_state.derniere_activite = datetime.now()
-                sec.log_action_immuable(DB_NAME, u_name, "Connexion", "Accès accordé")
-                st.rerun()
+            if not row:
+                st.error("Identifiant inconnu.")
             else:
-                nouveaux_echecs = echecs + 1
-                if nouveaux_echecs >= 3:
-                    conn.execute("UPDATE users SET statut='Bloqué', echecs_consecutifs=? WHERE username=?", (nouveaux_echecs, u_name))
-                    envoyer_alerte_urgence(u_name, f"⚠️ 3 échecs de connexion consécutifs sur le compte {u_name} — compte verrouillé.")
-                    st.error("🔒 3 échecs atteints — compte verrouillé et alerte envoyée au titulaire.")
+                u_name, u_hash, u_role, u_statut, echecs, doit_changer = row
+                if u_statut == "Bloqué":
+                    st.error("🔒 Compte bloqué (trop d'échecs ou kill-switch actif). Contactez l'administrateur.")
+                elif hash_password(password_input) == u_hash:
+                    conn.execute("UPDATE users SET echecs_consecutifs=0 WHERE username=?", (u_name,))
+                    conn.commit()
+                    st.session_state.authenticated = True
+                    st.session_state.username = u_name
+                    st.session_state.user_role = u_role
+                    st.session_state.doit_changer_mdp = bool(doit_changer)
+                    st.session_state.derniere_activite = datetime.now()
+                    sec.log_action_immuable(DB_NAME, u_name, "Connexion", "Accès accordé")
+                    st.rerun()
                 else:
-                    conn.execute("UPDATE users SET echecs_consecutifs=? WHERE username=?", (nouveaux_echecs, u_name))
-                    st.error(f"Mot de passe incorrect ({nouveaux_echecs}/3 avant verrouillage).")
-                conn.commit()
-                sec.log_action_immuable(DB_NAME, u_name, "Échec connexion", f"Tentative {nouveaux_echecs}/3")
-        conn.close()
+                    nouveaux_echecs = echecs + 1
+                    if nouveaux_echecs >= 3:
+                        conn.execute("UPDATE users SET statut='Bloqué', echecs_consecutifs=? WHERE username=?", (nouveaux_echecs, u_name))
+                        envoyer_alerte_urgence(u_name, f"⚠️ 3 échecs de connexion consécutifs sur le compte {u_name} — compte verrouillé.")
+                        st.error("🔒 3 échecs atteints — compte verrouillé et alerte envoyée au titulaire.")
+                    else:
+                        conn.execute("UPDATE users SET echecs_consecutifs=? WHERE username=?", (nouveaux_echecs, u_name))
+                        st.error(f"Mot de passe incorrect ({nouveaux_echecs}/3 avant verrouillage).")
+                    conn.commit()
+                    sec.log_action_immuable(DB_NAME, u_name, "Échec connexion", f"Tentative {nouveaux_echecs}/3")
+        finally:
+            conn.close()
     st.stop()
 
 # ======================================================================
@@ -244,12 +258,14 @@ if st.session_state.doit_changer_mdp:
                 st.error("Le mot de passe doit contenir : " + ", ".join(problemes) + ".")
             else:
                 conn = sqlite3.connect(DB_NAME)
-                conn.execute(
-                    "UPDATE users SET password_hash=?, doit_changer_mdp=0 WHERE username=?",
-                    (hash_password(nouveau), st.session_state.username),
-                )
-                conn.commit()
-                conn.close()
+                try:
+                    conn.execute(
+                        "UPDATE users SET password_hash=?, doit_changer_mdp=0 WHERE username=?",
+                        (hash_password(nouveau), st.session_state.username),
+                    )
+                    conn.commit()
+                finally:
+                    conn.close()
                 sec.log_action_immuable(DB_NAME, st.session_state.username, "Changement mot de passe", "Mot de passe temporaire remplacé")
                 st.session_state.doit_changer_mdp = False
                 st.success("Mot de passe mis à jour.")
@@ -290,9 +306,6 @@ if st.sidebar.button("Déconnexion"):
     st.rerun()
 st.sidebar.markdown("---")
 
-# Toutes les icônes/libellés sont définis UNE SEULE FOIS ici, puis
-# réutilisés à la fois dans page_options et dans le routeur ci-dessous.
-# Ça élimine tout risque de désynchronisation entre les deux listes.
 PAGE_ACCUEIL = "🏠 Accueil"
 PAGE_DASHBOARD = "📈 Tableau de Bord"
 PAGE_COMPTA = "📊 Comptabilité SYSCOHADA"
@@ -316,11 +329,7 @@ page_options = [
 if st.session_state.user_role == "Administrateur":
     page_options.append(PAGE_UTILISATEURS)
 
-# Correction du conflit de widget : on résout toute navigation "en attente"
-# (déclenchée par un clic sur "Ouvrir" dans la grille d'accueil) AVANT de
-# créer le widget radio lié à la clé "nav_page". On n'écrit JAMAIS dans
-# st.session_state.nav_page après que ce widget a été instancié dans le
-# même run — c'est ce qui causait le StreamlitWidgetAlreadyInstantiatedError.
+# Résolution des redirections pendant l'événement sans altération du state post-instanciation
 if "_pending_nav" in st.session_state:
     demande = st.session_state.pop("_pending_nav")
     if demande in page_options:
@@ -370,8 +379,11 @@ if page == PAGE_ACCUEIL:
 elif page == PAGE_DASHBOARD:
     st.subheader("Vue d'ensemble")
     conn = sqlite3.connect(DB_NAME)
-    df_tx = pd.read_sql_query("SELECT * FROM transactions", conn)
-    conn.close()
+    try:
+        df_tx = pd.read_sql_query("SELECT * FROM transactions", conn)
+    finally:
+        conn.close()
+
     if df_tx.empty:
         st.info("Aucune transaction enregistrée pour l'instant.")
     else:
@@ -418,8 +430,10 @@ elif page == PAGE_SECURITE:
     sec.render_module_amls(DB_NAME)
     st.markdown("---")
     conn = sqlite3.connect(DB_NAME)
-    df_geles = pd.read_sql_query("SELECT * FROM comptes_geles", conn)
-    conn.close()
+    try:
+        df_geles = pd.read_sql_query("SELECT * FROM comptes_geles", conn)
+    finally:
+        conn.close()
     st.subheader("🧊 Comptes actuellement gelés")
     st.dataframe(df_geles, use_container_width=True)
 
@@ -432,8 +446,10 @@ elif page == PAGE_AUDIT:
         ok, msg = sec.verifier_integrite_audit(DB_NAME)
         (st.success if ok else st.error)(msg)
     conn = sqlite3.connect(DB_NAME)
-    df_audit = pd.read_sql_query("SELECT id, timestamp, username, action, details FROM audit_chain ORDER BY id DESC LIMIT 200", conn)
-    conn.close()
+    try:
+        df_audit = pd.read_sql_query("SELECT id, timestamp, username, action, details FROM audit_chain ORDER BY id DESC LIMIT 200", conn)
+    finally:
+        conn.close()
     st.dataframe(df_audit, use_container_width=True)
 
 elif page == PAGE_DIRECTION:
@@ -486,13 +502,16 @@ elif page == PAGE_UTILISATEURS:
                         st.success(f"Compte **{nouveau_username}** créé. Communique-lui son identifiant et ce mot de passe temporaire par un canal sûr — il devra le changer à sa première connexion.")
                     except sqlite3.IntegrityError:
                         st.error("Cet identifiant existe déjà.")
-                    conn.close()
+                    finally:
+                        conn.close()
 
     st.markdown("---")
     st.markdown("##### Comptes existants")
     conn = sqlite3.connect(DB_NAME)
-    df_users = pd.read_sql_query("SELECT id, username, role, statut, echecs_consecutifs, doit_changer_mdp FROM users", conn)
-    conn.close()
+    try:
+        df_users = pd.read_sql_query("SELECT id, username, role, statut, echecs_consecutifs, doit_changer_mdp FROM users", conn)
+    finally:
+        conn.close()
     st.dataframe(df_users, use_container_width=True)
 
     if not df_users.empty:
@@ -501,16 +520,20 @@ elif page == PAGE_UTILISATEURS:
         with c1:
             if st.button("🔓 Réactiver et remettre le compteur d'échecs à zéro", use_container_width=True):
                 conn = sqlite3.connect(DB_NAME)
-                conn.execute("UPDATE users SET statut='Actif', echecs_consecutifs=0 WHERE username=?", (user_sel,))
-                conn.commit()
-                conn.close()
+                try:
+                    conn.execute("UPDATE users SET statut='Actif', echecs_consecutifs=0 WHERE username=?", (user_sel,))
+                    conn.commit()
+                finally:
+                    conn.close()
                 sec.log_action_immuable(DB_NAME, st.session_state.username, "Réactivation utilisateur", f"Compte {user_sel} débloqué manuellement")
                 st.success(f"Compte {user_sel} réactivé.")
         with c2:
             if st.button("🔁 Forcer un nouveau mot de passe à la prochaine connexion", use_container_width=True):
                 conn = sqlite3.connect(DB_NAME)
-                conn.execute("UPDATE users SET doit_changer_mdp=1 WHERE username=?", (user_sel,))
-                conn.commit()
-                conn.close()
+                try:
+                    conn.execute("UPDATE users SET doit_changer_mdp=1 WHERE username=?", (user_sel,))
+                    conn.commit()
+                finally:
+                    conn.close()
                 sec.log_action_immuable(DB_NAME, st.session_state.username, "Forçage changement mdp", f"Compte {user_sel} devra changer son mot de passe")
                 st.success(f"{user_sel} devra définir un nouveau mot de passe à sa prochaine connexion.")
