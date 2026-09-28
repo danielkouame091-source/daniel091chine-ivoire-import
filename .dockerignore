@@ -1,0 +1,61 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+venv/
+.venv/
+env/
+ENV/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Node (si frontend dans le repo)
+node_modules/
+.next/
+out/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+
+# Docs & tests
+docs/
+tests/
+*.md
+!README.md
+
+# Logs & data
+*.log
+logs/
+data/
+pgdata/
+redisdata/
+
+# OS
+.DS_Store
+Thumbs.db
