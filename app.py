@@ -4,7 +4,8 @@ Orchestrateur principal : licence par session client (portail pro),
 authentification avec verrouillage après 3 échecs + alerte, changement
 de mot de passe forcé à la première connexion, déconnexion automatique
 après inactivité, kill-switch d'urgence, et intégration sécurité /
-comptabilité / traçabilité / direction / scoring / négoce / IA / PDF.
+comptabilité / fiscalité / trésorerie / traçabilité / direction /
+scoring crédit / négoce international / IA / documents PDF.
 """
 
 import hashlib
@@ -128,6 +129,7 @@ sec.init_audit_chain(DB_NAME)
 sec.init_transactions_table(DB_NAME)
 tracker.init_tracabilite_tables(DB_NAME)
 compta.init_compta_tables(DB_NAME)
+fiscal.init_fiscal_tables(DB_NAME)
 tresorerie.init_tresorerie_tables(DB_NAME)
 direction.init_direction_tables(DB_NAME)
 credit_scoring.init_scoring_tables(DB_NAME)
