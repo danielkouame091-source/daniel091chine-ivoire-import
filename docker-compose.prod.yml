@@ -1,0 +1,195 @@
+# =============================================================================
+# MTech SaaS SYSCOHADA — Docker Compose PRODUCTION
+# Usage : docker compose -f docker-compose.prod.yml up -d
+#
+# Différences vs dev :
+#   - Pas de --reload, pas de bind mounts
+#   - Replicas API x3 (scalable)
+#   - Logs JSON structurés
+#   - Ressources CPU/RAM limitées
+#   - Utilisateurs non-root stricts (déjà géré par Dockerfile)
+#   - PostgreSQL non exposé à l'extérieur
+#   - Redis avec mot de passe
+# =============================================================================
+
+services:
+
+  # ─── PostgreSQL 16 ────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: mtech_postgres_prod
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    # ⚠️ PAS de ports: exposé à l'extérieur → uniquement réseau interne Docker
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+    networks:
+      - mtech_net
+
+  # ─── Redis 7 ──────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: mtech_redis_prod
+    restart: always
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+    networks:
+      - mtech_net
+
+  # ─── Migrations Alembic (one-shot) ────────────────────────────────────────
+  migrate:
+    image: ${IMAGE_REGISTRY:-mtech}/saas-api:${IMAGE_TAG:-latest}
+    container_name: mtech_migrate_prod
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - mtech_net
+    restart: "no"
+
+  # ─── API FastAPI (replicas) ───────────────────────────────────────────────
+  api:
+    image: ${IMAGE_REGISTRY:-mtech}/saas-api:${IMAGE_TAG:-latest}
+    restart: always
+    command: >
+      uvicorn app.main:app
+      --host 0.0.0.0
+      --port 8000
+      --workers 4
+      --log-config /app/logging-prod.json
+    environment:
+      ENV: prod
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY}
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      WAVE_WEBHOOK_SECRET: ${WAVE_WEBHOOK_SECRET}
+      ORANGE_WEBHOOK_SECRET: ${ORANGE_WEBHOOK_SECRET}
+      MTN_WEBHOOK_SECRET: ${MTN_WEBHOOK_SECRET}
+      MOOV_WEBHOOK_SECRET: ${MOOV_WEBHOOK_SECRET}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      FOUNDER_EMAIL: ${FOUNDER_EMAIL}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"   # bind localhost uniquement (derrière reverse-proxy)
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 1G
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+    networks:
+      - mtech_net
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # ─── Worker ARQ ───────────────────────────────────────────────────────────
+  worker:
+    image: ${IMAGE_REGISTRY:-mtech}/saas-api:${IMAGE_TAG:-latest}
+    restart: always
+    command: ["arq", "app.workers.arq_settings.WorkerSettings"]
+    environment:
+      ENV: prod
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+    networks:
+      - mtech_net
+
+  # ─── Reverse proxy Caddy (TLS auto Let's Encrypt) ─────────────────────────
+  caddy:
+    image: caddy:2-alpine
+    container_name: mtech_caddy
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+    networks:
+      - mtech_net
+
+volumes:
+  pgdata:
+    driver: local
+  redisdata:
+    driver: local
+  caddy_data:
+    driver: local
+  caddy_config:
+    driver: local
+
+networks:
+  mtech_net:
+    driver: bridge
