@@ -261,8 +261,6 @@ def render_assistant(show_sql: bool = True):
                 result = ask(question)
             _show_result(result, show_sql)
         history.append({"question": question, "result": result})
-
-
 def _show_result(result: dict, show_sql: bool):
     if "error" in result:
         st.warning(result["error"])
