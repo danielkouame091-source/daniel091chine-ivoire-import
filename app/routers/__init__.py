@@ -1,6 +1,7 @@
 """Point d'entrée unique des routers."""
 from app.routers import (
     admin_cockpit,
+    ai,
     auth,
     billing,
     ecritures,
@@ -10,10 +11,12 @@ from app.routers import (
     plan_comptable,
     tenants,
     users,
+    whatsapp,
 )
 
 __all__ = [
     "admin_cockpit",
+    "ai",
     "auth",
     "billing",
     "ecritures",
@@ -23,4 +26,5 @@ __all__ = [
     "plan_comptable",
     "tenants",
     "users",
+    "whatsapp",
 ]
