@@ -1,0 +1,161 @@
+# =============================================================================
+# MTech SaaS SYSCOHADA — Docker Compose (développement)
+# Démarrage : docker compose up -d
+# Logs      : docker compose logs -f api worker
+# ─────────────────────────────────────────────────────────────────────────────
+# Services :
+#   postgres  → PostgreSQL 16 (données persistantes)
+#   redis     → Redis 7 (jobs ARQ + cache)
+#   api       → FastAPI (uvicorn)
+#   worker    → ARQ (jobs async)
+#   migrate   → Alembic (one-shot, applique les migrations au démarrage)
+# =============================================================================
+
+services:
+
+  # ─── PostgreSQL 16 ────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: mtech_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mtech}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mtech_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-mtech_saas}
+      PGDATA: /var/lib/postgresql/data/pgdata
+      # Encodage et locale
+      LANG: fr_FR.UTF-8
+      LC_ALL: fr_FR.UTF-8
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./sql/00_extensions_types.sql:/docker-entrypoint-initdb.d/00_extensions.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mtech} -d ${POSTGRES_DB:-mtech_saas}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - mtech_net
+
+  # ─── Redis 7 ──────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: mtech_redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - mtech_net
+
+  # ─── Migrations Alembic (one-shot) ────────────────────────────────────────
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mtech_migrate
+    command: ["alembic", "upgrade", "head"]
+    env_file:
+      - .env
+    environment:
+      # ⚠️ Alembic utilise le driver SYNC (psycopg2), pas asyncpg
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-mtech}:${POSTGRES_PASSWORD:-mtech_dev_password}@postgres:5432/${POSTGRES_DB:-mtech_saas}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - mtech_net
+    restart: "no"
+
+  # ─── API FastAPI ──────────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mtech_api
+    restart: unless-stopped
+    command: >
+      uvicorn app.main:app
+      --host 0.0.0.0
+      --port 8000
+      --reload
+      --log-level info
+    env_file:
+      - .env
+    environment:
+      # Le service Docker "postgres" est résolu par DNS interne
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-mtech}:${POSTGRES_PASSWORD:-mtech_dev_password}@postgres:5432/${POSTGRES_DB:-mtech_saas}
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      # Hot-reload en dev
+      - ./app:/app/app:ro
+      - ./alembic:/app/alembic:ro
+      - ./scripts:/app/scripts:ro
+      - ./sql:/app/sql:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - mtech_net
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # ─── Worker ARQ ───────────────────────────────────────────────────────────
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mtech_worker
+    restart: unless-stopped
+    command: ["arq", "app.workers.arq_settings.WorkerSettings"]
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-mtech}:${POSTGRES_PASSWORD:-mtech_dev_password}@postgres:5432/${POSTGRES_DB:-mtech_saas}
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./app:/app/app:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - mtech_net
+
+volumes:
+  pgdata:
+    driver: local
+  redisdata:
+    driver: local
+
+networks:
+  mtech_net:
+    driver: bridge
