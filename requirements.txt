@@ -11,3 +11,5 @@ qrcode
 numpy
 cryptography
 africastalking
+qrcode[pil]
+anthropic
