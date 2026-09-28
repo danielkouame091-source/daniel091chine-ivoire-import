@@ -1,0 +1,46 @@
+# =============================================================================
+# Caddy — reverse proxy avec TLS Let's Encrypt automatique
+# Remplace "api.mtech.ci" par ton domaine réel.
+# =============================================================================
+
+# ─── API ──────────────────────────────────────────────────────────────────
+api.mtech.ci {
+    encode gzip zstd
+
+    # Rate limiting basique côté Caddy (complète celui de FastAPI)
+    @too_many_requests {
+        path /api/v1/auth/login
+    }
+    rate_limit @too_many_requests 10r/m
+
+    # Headers de sécurité
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Permissions-Policy "geolocation=(), microphone=(), camera=()"
+        -Server
+    }
+
+    # Logs JSON
+    log {
+        output file /var/log/caddy/api-access.log {
+            roll_size 100mb
+            roll_keep 10
+        }
+        format json
+    }
+
+    # Proxy vers les replicas API (round-robin géré par Docker DNS)
+    reverse_proxy api:8000 {
+        health_uri /health
+        health_interval 30s
+        health_timeout 5s
+    }
+}
+
+# ─── Frontend Next.js (optionnel, si servi depuis ce repo) ────────────────
+# app.mtech.ci {
+#     reverse_proxy web:3000
+# }
