@@ -118,3 +118,13 @@ from app.models.portal import (
 "OnlinePayment", "PortalConversation", "PortalInvitation", "PortalMessage",
 "PortalNotification", "PortalSession", "PortalUser", "SharedDocument",
 "SupplierInvoiceSubmission",
+from app.models.hr import (
+    Department, DisciplinaryAction, EmployeeAbsence, EmployeeDocument,
+    EmployeeOffboarding, EmploymentContract, LeaveBalance, LeaveRequest,
+    PerformanceReview, TimeEntry, Training, TrainingParticipant,
+)
+
+# Dans __all__ :
+"Department", "DisciplinaryAction", "EmployeeAbsence", "EmployeeDocument",
+"EmployeeOffboarding", "EmploymentContract", "LeaveBalance", "LeaveRequest",
+"PerformanceReview", "TimeEntry", "Training", "TrainingParticipant",
