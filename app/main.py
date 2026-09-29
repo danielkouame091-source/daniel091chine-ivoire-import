@@ -172,3 +172,13 @@ app.add_middleware(AuditCaptureMiddleware)
 
 # Dans les routers :
 app.include_router(audit_internal.router, prefix=f"{P}/audit",           tags=["audit"])
+from app.routers import (
+    admin_cockpit, ai, analytical, assets, audit_internal, auth, billing,
+    consolidation, ecritures, fne, formation, freeze, journaux, mobile_money,
+    plan_comptable, projects, purchases, reporting, sales, stock, tenants,
+    treasury, users, whatsapp,
+)
+
+# ...
+
+app.include_router(formation.router,      prefix=f"{P}/formation",      tags=["formation"])
