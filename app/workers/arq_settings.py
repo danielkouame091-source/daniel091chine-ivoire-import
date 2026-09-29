@@ -18,6 +18,7 @@ from app.workers import (
     hr_batch,
     mm_reconciliation,
     nlp_batch,
+    notification_batch,
     notifications,
     project_batch,
     relance_batch,
@@ -64,6 +65,9 @@ class WorkerSettings:
         hr_batch.alerte_fins_cdd_et_periodes_essai,
         hr_batch.alerte_soldes_conges_faibles,
         hr_batch.initialiser_soldes_conges_annee,
+        notification_batch.traiter_file_notifications,
+        notification_batch.nettoyer_anciennes_notifications,
+        notification_batch.envoyer_campagnes_planifiees,
     ]
 
     cron_jobs = [
@@ -85,18 +89,21 @@ class WorkerSettings:
         cron(project_batch.liberer_retenues_garantie, day=1, hour=4, minute=30),
         cron(formation_batch.verifier_sla_tickets, minute=0),
         cron(formation_batch.suggerer_articles_manquants, weekday=0, hour=5, minute=0),
-        # RH : alertes fins de contrat tous les jours à 06h UTC
         cron(hr_batch.alerte_fins_cdd_et_periodes_essai, hour=6, minute=0),
-        # RH : soldes congés faibles chaque lundi 06h30
         cron(hr_batch.alerte_soldes_conges_faibles, weekday=0, hour=6, minute=30),
-        # RH : initialisation annuelle 1er janvier à 01h
         cron(hr_batch.initialiser_soldes_conges_annee, day=1, hour=1, minute=0),
+        # Notifications : traitement toutes les minutes
+        cron(notification_batch.traiter_file_notifications, minute="*"),
+        # Campagnes planifiées : toutes les 5 minutes
+        cron(notification_batch.envoyer_campagnes_planifiees, minute="*/5"),
+        # Nettoyage nocturne
+        cron(notification_batch.nettoyer_anciennes_notifications, day=1, hour=5, minute=30),
     ]
 
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
-    max_jobs = 20
+    max_jobs = 30
     job_timeout = 900
     keep_result = 3600
     max_tries = 3
