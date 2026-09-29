@@ -138,3 +138,11 @@ from app.models.notification import (
 "Notification", "NotificationCampaign", "NotificationEvent",
 "NotificationPreference", "NotificationSuppression", "NotificationTemplate",
 "PushDevice",
+from app.models.public_api import (
+    ApiClient, ApiKey, ApiUsageAggregate, ApiUsageLog,
+    IdempotencyKey, WebhookDelivery, WebhookEndpoint,
+)
+
+# Dans __all__ :
+"ApiClient", "ApiKey", "ApiUsageAggregate", "ApiUsageLog",
+"IdempotencyKey", "WebhookDelivery", "WebhookEndpoint",
