@@ -1,0 +1,62 @@
+name: Deploy — Railway
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "web/**"
+      - "**.md"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-railway-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────
+  # 1. Déployer l'API
+  # ─────────────────────────────────────────────────────────────────
+  deploy-api:
+    name: Deploy API (Railway)
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Deploy API
+        run: railway up --service api --detach
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+
+      - name: Wait for health
+        run: |
+          sleep 15
+          for i in {1..6}; do
+            if curl -fsS https://api.mtech.ci/health; then
+              echo "✅ API healthy"
+              exit 0
+            fi
+            sleep 10
+          done
+          exit 1
+
+  # ─────────────────────────────────────────────────────────────────
+  # 2. Déployer le Worker
+  # ─────────────────────────────────────────────────────────────────
+  deploy-worker:
+    name: Deploy Worker (Railway)
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Deploy Worker
+        run: railway up --service worker --detach
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
