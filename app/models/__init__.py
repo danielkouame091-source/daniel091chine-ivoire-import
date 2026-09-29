@@ -90,3 +90,11 @@ from app.models.audit_internal import (
 # Ajouter dans __all__ :
 "AUDIT_FINDING", "AUDIT_RULE", "AUDIT_RUN", "AUDIT_TRAIL",
 "BENFORD_ANALYSIS", "COMPLIANCE_REPORT",
+from app.models.project import (
+    ProgressBilling, ProgressBillingLine, Project, ProjectCost,
+    ProjectMilestone, ProjectPhase, ProjectResourceAssignment, ProjectTask,
+)
+
+# Dans __all__ :
+"ProgressBilling", "ProgressBillingLine", "Project", "ProjectCost",
+"ProjectMilestone", "ProjectPhase", "ProjectResourceAssignment", "ProjectTask",
