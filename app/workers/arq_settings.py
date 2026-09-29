@@ -9,6 +9,7 @@ from arq.connections import RedisSettings
 from app.core.config import settings
 from app.workers import (
     analytical_batch,
+    audit_batch,
     consolidation_batch,
     fne_batch,
     forecast_batch,
@@ -49,6 +50,10 @@ class WorkerSettings:
         consolidation_batch.executer_consolidations_mensuelles,
         fne_batch.retry_certifications_fne,
         fne_batch.sync_stickers_et_alerter,
+        audit_batch.audit_quotidien,
+        audit_batch.audit_hebdomadaire,
+        audit_batch.audit_mensuel_conformite,
+        audit_batch.escalader_findings_critiques,
     ]
 
     cron_jobs = [
@@ -63,17 +68,23 @@ class WorkerSettings:
         cron(analytical_batch.recalculer_budgets_actifs, hour=3, minute=0),
         cron(analytical_batch.alerter_depassements_budgetaires, weekday=0, hour=7, minute=30),
         cron(consolidation_batch.executer_consolidations_mensuelles, day=5, hour=4, minute=0),
-        # FNE : retry toutes les 15 min
         cron(fne_batch.retry_certifications_fne, minute={0, 15, 30, 45}),
-        # FNE : sync stickers toutes les 6h
         cron(fne_batch.sync_stickers_et_alerter, hour={0, 6, 12, 18}, minute=30),
+        # Audit quotidien à 02h UTC
+        cron(audit_batch.audit_quotidien, hour=2, minute=0),
+        # Audit hebdomadaire : dimanche 02h30
+        cron(audit_batch.audit_hebdomadaire, weekday=6, hour=2, minute=30),
+        # Rapport mensuel : 1er du mois à 03h
+        cron(audit_batch.audit_mensuel_conformite, day=1, hour=3, minute=0),
+        # Escalade findings critiques : toutes les 6h
+        cron(escalader := audit_batch.escalader_findings_critiques, hour={0, 6, 12, 18}, minute=15),
     ]
 
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
     max_jobs = 20
-    job_timeout = 600
+    job_timeout = 900
     keep_result = 3600
     max_tries = 3
     retry_jobs = True
