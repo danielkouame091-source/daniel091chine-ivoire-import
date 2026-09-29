@@ -6,5 +6,6 @@ __all__ = [
     "mm_reconciliation",
     "nlp_batch",
     "notifications",
+    "relance_batch",
     "reporting_batch",
 ]
