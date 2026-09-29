@@ -146,4 +146,12 @@ app.include_router(analytical.router,     prefix=f"{P}/analytical",     tags=["a
 
 # ...
 
-app.include_router(consolidation.router,  prefix=f"{P}/consolidation",  tags=["consolidation"])
+app.include_router(consolidation.router,  prefix=f"{P}/consolidation",  tags=["consolidation"])from app.routers import (
+    admin_cockpit, ai, analytical, assets, auth, billing, consolidation,
+    ecritures, fne, freeze, journaux, mobile_money, plan_comptable, purchases,
+    reporting, sales, stock, tenants, treasury, users, whatsapp,
+)
+
+# ...
+
+app.include_router(fne.router,            prefix=f"{P}/fne",            tags=["fne"])
