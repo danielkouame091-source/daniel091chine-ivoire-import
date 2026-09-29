@@ -9,6 +9,9 @@ from app.models.freeze import (
 from app.models.journal import Journal
 from app.models.mobile_money import MmTransaction
 from app.models.nlp import NlpFeedback, NlpPattern, NlpSuggestion
+from app.models.payroll import (
+    CnpsDeclaration, DgiDeclaration, Employee, FinancialStatement, Payslip,
+)
 from app.models.plan import Plan
 from app.models.plan_comptable import PlanComptable
 from app.models.session import Session
@@ -20,12 +23,17 @@ from app.models.whatsapp import WhatsAppLink, WhatsAppMessage
 __all__ = [
     "AuditLog",
     "CashflowForecast",
+    "CnpsDeclaration",
+    "DgiDeclaration",
     "Ecriture", "EcritureLigne",
+    "Employee",
     "Exercice",
+    "FinancialStatement",
     "FreezeCascadeRule", "FreezeEvent", "FreezeTarget",
     "Journal",
     "MmTransaction",
     "NlpFeedback", "NlpPattern", "NlpSuggestion",
+    "Payslip",
     "Plan", "PlanComptable",
     "Session",
     "Subscription", "SubscriptionPayment",
