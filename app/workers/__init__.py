@@ -8,6 +8,7 @@ __all__ = [
     "forecast_batch",
     "formation_batch",
     "freeze_propagation",
+    "hr_batch",
     "mm_reconciliation",
     "nlp_batch",
     "notifications",
