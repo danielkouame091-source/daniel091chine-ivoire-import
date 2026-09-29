@@ -235,4 +235,113 @@ class TestSituations:
                 quantite_marche=1, quantite_cumulee_precedente=0,
                 quantite_cumulee_actuelle=1, prix_unitaire_ht=25_000_000,
                 compte_produit="705000",
-           
+            )],
+        ))
+        await db_session.flush()
+
+        # Situation 2 : 60% cumulé = 60M → situation = 35M
+        b2 = await svc.creer_situation(ProgressBillingCreate(
+            project_id=project.id,
+            date_situation=date(2025, 6, 30),
+            libelle="Sit 2",
+            pourcentage_avancement_cumule=60.0,
+            lignes=[ProgressBillingLineCreate(
+                designation="Fondations",
+                quantite_marche=1, quantite_cumulee_precedente=1,
+                quantite_cumulee_actuelle=2.4, prix_unitaire_ht=25_000_000,
+                compte_produit="705000",
+            )],
+        ))
+        await db_session.flush()
+
+        # Cumul actuel = 2.4 × 25M = 60M, précédent = 25M, situation = 35M
+        assert b2.montant_cumule_actuel_ht == 60_000_000
+        assert b2.montant_cumule_precedent_ht == 25_000_000
+        assert b2.montant_situation_ht == 35_000_000
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# TESTS AVANCEMENT & MARGE
+# ═════════════════════════════════════════════════════════════════════════════
+class TestAvancement:
+    async def test_avancement_couts_engages(
+        self, db_session, tenant, admin_user, project, plan_comptable_ci
+    ):
+        """Méthode CUMP : % = coûts engagés / coût total estimé."""
+        svc = ProjectService(db_session, tenant.id, admin_user.id)
+        await svc.lancer_projet(project.id)
+
+        # Coût total estimé = 70M
+        # Imputer 35M → 50%
+        await svc.imputer_cout(project.id, ProjectCostCreate(
+            date_cout=date(2025, 3, 1),
+            libelle="Coûts",
+            type_cout="achat",
+            montant_ht=35_000_000,
+            compte_comptable="601000",
+        ))
+        await db_session.flush()
+
+        await svc._recalculer_avancement_physique(project.id)
+        await db_session.refresh(project)
+        assert float(project.pourcentage_avancement_physique) == 50.0
+
+    async def test_marge_projet(
+        self, db_session, tenant, admin_user, project, plan_comptable_ci
+    ):
+        svc = ProjectService(db_session, tenant.id, admin_user.id)
+        await svc.lancer_projet(project.id)
+
+        # Facturer 60M via situation
+        b = await svc.creer_situation(ProgressBillingCreate(
+            project_id=project.id,
+            date_situation=date(2025, 6, 30),
+            libelle="Sit",
+            pourcentage_avancement_cumule=60.0,
+            lignes=[ProgressBillingLineCreate(
+                designation="Travaux",
+                quantite_marche=1, quantite_cumulee_precedente=0,
+                quantite_cumulee_actuelle=1, prix_unitaire_ht=60_000_000,
+                compte_produit="705000",
+            )],
+        ))
+        await svc.valider_situation(b.id)
+
+        # Imputer 30M de coûts
+        await svc.imputer_cout(project.id, ProjectCostCreate(
+            date_cout=date(2025, 6, 1),
+            libelle="Coûts",
+            type_cout="achat",
+            montant_ht=30_000_000,
+            compte_comptable="601000",
+        ))
+        await db_session.flush()
+
+        m = await svc.marge_projet(project.id)
+        assert m.montant_marche_ht == 100_000_000
+        assert m.budget_previsionnel_ht == 70_000_000
+        assert m.budget_realise_ht == 30_000_000
+        assert m.marge_previsionnelle == 30_000_000
+        assert m.marge_previsionnelle_pct == 30.0
+        # Marge actuelle = CA facturé (60M) - coûts (30M) = 30M
+        assert m.marge_actuelle == 30_000_000
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# TESTS PORTEFEUILLE
+# ═════════════════════════════════════════════════════════════════════════════
+class TestPortefeuille:
+    async def test_portefeuille_vide(self, db_session, tenant, admin_user):
+        svc = ProjectService(db_session, tenant.id, admin_user.id)
+        port = await svc.portefeuille()
+        assert port.nb_projets_total == 0
+        assert port.marge_globale_ht == 0
+
+    async def test_portefeuille_avec_projets(
+        self, db_session, tenant, admin_user, project
+    ):
+        svc = ProjectService(db_session, tenant.id, admin_user.id)
+        port = await svc.portefeuille()
+        assert port.nb_projets_total == 1
+        assert port.montant_marche_total_ht == 100_000_000
+        assert port.marge_globale_ht == 30_000_000   # 100M - 70M de budget
