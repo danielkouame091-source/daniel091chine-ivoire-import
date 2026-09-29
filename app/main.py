@@ -90,6 +90,11 @@ from app.routers import (
     mobile_money, plan_comptable, reporting, tenants, users, whatsapp,
 )
 
+# ...from app.routers import (
+    admin_cockpit, ai, auth, billing, ecritures, freeze, journaux,
+    mobile_money, plan_comptable, reporting, stock, tenants, users, whatsapp,
+)
 # ...
+app.include_router(stock.router,          prefix=f"{P}/stock",          tags=["stock"])
 
 app.include_router(reporting.router,      prefix=f"{P}/reporting",      tags=["reporting"])
