@@ -11,6 +11,7 @@ __all__ = [
     "hr_batch",
     "mm_reconciliation",
     "nlp_batch",
+    "notification_batch",
     "notifications",
     "project_batch",
     "relance_batch",
