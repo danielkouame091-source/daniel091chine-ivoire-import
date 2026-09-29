@@ -8,22 +8,10 @@ from arq.connections import RedisSettings
 
 from app.core.config import settings
 from app.workers import (
-    analytical_batch,
-    audit_batch,
-    consolidation_batch,
-    fne_batch,
-    forecast_batch,
-    formation_batch,
-    freeze_propagation,
-    hr_batch,
-    mm_reconciliation,
-    nlp_batch,
-    notification_batch,
-    notifications,
-    project_batch,
-    relance_batch,
-    reporting_batch,
-    treasury_batch,
+    analytical_batch, audit_batch, bi_batch, consolidation_batch, fne_batch,
+    forecast_batch, formation_batch, freeze_propagation, hr_batch,
+    mm_reconciliation, nlp_batch, notification_batch, notifications,
+    project_batch, relance_batch, reporting_batch, treasury_batch, webhook_batch,
 )
 
 
@@ -68,6 +56,13 @@ class WorkerSettings:
         notification_batch.traiter_file_notifications,
         notification_batch.nettoyer_anciennes_notifications,
         notification_batch.envoyer_campagnes_planifiees,
+        bi_batch.creer_snapshots_kpi,
+        bi_batch.nettoyer_cache_kpi,
+        bi_batch.nettoyer_exports_expires,
+        webhook_batch.traiter_livraisons_webhook,
+        webhook_batch.nettoyer_anciennes_livraisons,
+        webhook_batch.nettoyer_idempotency_expire,
+        webhook_batch.agreger_usage_api,
     ]
 
     cron_jobs = [
@@ -92,19 +87,26 @@ class WorkerSettings:
         cron(hr_batch.alerte_fins_cdd_et_periodes_essai, hour=6, minute=0),
         cron(hr_batch.alerte_soldes_conges_faibles, weekday=0, hour=6, minute=30),
         cron(hr_batch.initialiser_soldes_conges_annee, day=1, hour=1, minute=0),
-        # Notifications : traitement toutes les minutes
         cron(notification_batch.traiter_file_notifications, minute="*"),
-        # Campagnes planifiées : toutes les 5 minutes
         cron(notification_batch.envoyer_campagnes_planifiees, minute="*/5"),
-        # Nettoyage nocturne
         cron(notification_batch.nettoyer_anciennes_notifications, day=1, hour=5, minute=30),
+        cron(bi_batch.creer_snapshots_kpi, hour=4, minute=0),
+        cron(bi_batch.nettoyer_cache_kpi, minute=15),
+        cron(bi_batch.nettoyer_exports_expires, hour=5, minute=45),
+        # Webhooks : toutes les minutes
+        cron(webhook_batch.traiter_livraisons_webhook, minute="*"),
+        # Nettoyages : quotidiens
+        cron(webhook_batch.nettoyer_anciennes_livraisons, hour=5, minute=0),
+        cron(webhook_batch.nettoyer_idempotency_expire, hour=5, minute=15),
+        # Agrégation usage : chaque heure
+        cron(webhook_batch.agreger_usage_api, minute=30),
     ]
 
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
-    max_jobs = 30
-    job_timeout = 900
+    max_jobs = 40
+    job_timeout = 1200
     keep_result = 3600
     max_tries = 3
     retry_jobs = True
