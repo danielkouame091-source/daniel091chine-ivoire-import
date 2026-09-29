@@ -471,4 +471,180 @@ async def requeue_ocr(
         await redis.aclose()
     except Exception as exc:
         raise __import__("fastapi").HTTPException(500, f"Échec queue OCR : {exc}")
-    return {"
+    return {"ok": True, "document_id": str(document_id), "moteur": data.moteur}
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# SIGNATURES
+# ═════════════════════════════════════════════════════════════════════════════
+@router.post("/documents/{document_id}/signatures", response_model=SignatureRequestOut, status_code=201)
+async def request_signature(
+    document_id: UUID,
+    data: SignatureRequestIn,
+    current_tenant: CurrentTenant,
+    current_user: RequireComptable,
+    __: RequireActiveSubscription,
+    db: TenantDBSession,
+) -> SignatureRequestOut:
+    svc = SignatureService(db, current_tenant.id, current_user.id)
+    sig, otp_plain = await svc.demander_signature(document_id, data)
+
+    base = SignatureOut.model_validate(sig).model_dump()
+    return SignatureRequestOut(
+        **base,
+        lien_signature=None,
+    )
+
+
+@router.post("/signatures/verify", response_model=SignatureOut)
+async def verify_signature_otp(
+    data: SignatureVerifyOTPIn,
+    current_tenant: CurrentTenant,
+    current_user: CurrentUser,
+    db: TenantDBSession,
+) -> SignatureOut:
+    svc = SignatureService(db, current_tenant.id, current_user.id)
+    sig = await svc.verifier_otp_et_signer(data.signature_id, data.otp_code)
+    return SignatureOut.model_validate(sig)
+
+
+@router.post("/signatures/{signature_id}/refuser", response_model=SignatureOut)
+async def refuse_signature(
+    signature_id: UUID,
+    data: SignatureRefuseIn,
+    current_tenant: CurrentTenant,
+    current_user: CurrentUser,
+    db: TenantDBSession,
+) -> SignatureOut:
+    svc = SignatureService(db, current_tenant.id, current_user.id)
+    sig = await svc.refuser_signature(signature_id, data)
+    return SignatureOut.model_validate(sig)
+
+
+@router.get("/signatures/{signature_id}/verifier")
+async def verify_signature_integrity(
+    signature_id: UUID,
+    current_tenant: CurrentTenant,
+    current_user: CurrentUser,
+    db: TenantDBSession,
+) -> dict:
+    svc = SignatureService(db, current_tenant.id, current_user.id)
+    return await svc.verifier_signature(signature_id)
+
+
+@router.get("/documents/{document_id}/signatures", response_model=list[SignatureOut])
+async def list_signatures(
+    document_id: UUID,
+    current_tenant: CurrentTenant,
+    current_user: CurrentUser,
+    db: TenantDBSession,
+) -> list[SignatureOut]:
+    svc = SignatureService(db, current_tenant.id, current_user.id)
+    rows = await svc.lister_signatures(document_id)
+    return [SignatureOut.model_validate(s) for s in rows]
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# PARTAGES
+# ═════════════════════════════════════════════════════════════════════════════
+@router.post("/documents/{document_id}/shares", response_model=ShareCreatedOut, status_code=201)
+async def create_share(
+    document_id: UUID,
+    data: ShareCreateIn,
+    current_tenant: CurrentTenant,
+    current_user: RequireComptable,
+    __: RequireActiveSubscription,
+    db: TenantDBSession,
+) -> ShareCreatedOut:
+    svc = ShareService(db, current_tenant.id, current_user.id)
+    share, token = await svc.creer_partage(document_id, data)
+
+    base = ShareOut.model_validate(share).model_dump()
+    return ShareCreatedOut(
+        **base,
+        token_plain=token,
+        url_partage=f"https://app.mtech.ci/shared/{token}",
+    )
+
+
+@router.get("/documents/{document_id}/shares", response_model=list[ShareOut])
+async def list_shares(
+    document_id: UUID,
+    current_tenant: CurrentTenant,
+    current_user: CurrentUser,
+    db: TenantDBSession,
+) -> list[ShareOut]:
+    svc = ShareService(db, current_tenant.id, current_user.id)
+    rows = await svc.lister_partages(document_id)
+    return [ShareOut.model_validate(s) for s in rows]
+
+
+@router.post("/shares/{share_id}/revoquer", response_model=ShareOut)
+async def revoke_share(
+    share_id: UUID,
+    data: ShareRevokeIn,
+    current_tenant: CurrentTenant,
+    current_user: RequireAdminTenant,
+    __: RequireActiveSubscription,
+    db: TenantDBSession,
+) -> ShareOut:
+    svc = ShareService(db, current_tenant.id, current_user.id)
+    share = await svc.revoquer_partage(share_id, data)
+    return ShareOut.model_validate(share)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# AUDIT
+# ═════════════════════════════════════════════════════════════════════════════
+@router.get("/audit-logs", response_model=list[DocumentAccessLogOut])
+async def list_access_logs(
+    current_tenant: CurrentTenant,
+    current_user: RequireAdminTenant,
+    db: TenantDBSession,
+    document_id: UUID | None = Query(None),
+    action: str | None = Query(None),
+    limit: int = Query(200, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+) -> list[DocumentAccessLogOut]:
+    stmt = select(DocumentAccessLog).where(DocumentAccessLog.tenant_id == current_tenant.id)
+    if document_id:
+        stmt = stmt.where(DocumentAccessLog.document_id == document_id)
+    if action:
+        stmt = stmt.where(DocumentAccessLog.action == action)
+    stmt = stmt.order_by(DocumentAccessLog.created_at.desc()).limit(limit).offset(offset)
+    rows = (await db.execute(stmt)).scalars().all()
+    return [DocumentAccessLogOut.model_validate(l) for l in rows]
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# PUBLIC — TÉLÉCHARGEMENT VIA LIEN PARTAGÉ
+# ═════════════════════════════════════════════════════════════════════════════
+@router.get("/shared/{token}")
+async def public_share_access(
+    token: str,
+    db: TenantDBSession,
+    mot_de_passe: str | None = Query(None),
+) -> dict:
+    """Accès public à un document via token (sans auth)."""
+    svc = ShareService(db, None, None)
+    doc = await svc.acceder_par_token(token, mot_de_passe)
+    return {
+        "document_id": str(doc.id),
+        "nom": doc.nom,
+        "type_document": doc.type_document,
+        "fichier_nom_original": doc.fichier_nom_original,
+        "fichier_taille_kb": doc.fichier_taille_kb,
+        "mime_type": doc.mime_type,
+        "download_url": f"/api/v1/ged/shared/{token}/download",
+    }
+
+
+@router.get("/shared/{token}/download")
+async def public_share_download(
+    token: str,
+    db: TenantDBSession,
+    mot_de_passe: str | None = Query(None),
+) -> dict:
+    svc = ShareService(db, None, None)
+    url = await svc.telecharger_par_token(token, mot_de_passe)
+    return {"url": url, "expire_minutes": 15}
