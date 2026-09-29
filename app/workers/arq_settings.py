@@ -8,6 +8,7 @@ from arq.connections import RedisSettings
 
 from app.core.config import settings
 from app.workers import (
+    analytical_batch,
     forecast_batch,
     freeze_propagation,
     mm_reconciliation,
@@ -29,26 +30,20 @@ async def shutdown(ctx: dict[str, Any]) -> None:
 
 class WorkerSettings:
     functions = [
-        # Mobile Money
         mm_reconciliation.rapprocher_batch,
         mm_reconciliation.reconcile_one,
-        # Freeze
         freeze_propagation.propager_gel,
         freeze_propagation.appliquer_effets_cascade,
-        # Notifications
         notifications.envoyer_whatsapp,
         notifications.notifier_expiration_abonnement,
-        # NLP
         nlp_batch.traiter_suggestions_en_attente,
-        # Prévisions
         forecast_batch.recalculer_toutes_les_previsions,
-        # Reporting
         reporting_batch.generer_declarations_mensuelles,
         reporting_batch.alerter_echeances_proches,
-        # Relances
         relance_batch.executer_relances_quotidiennes,
-        # Trésorerie
         treasury_batch.snapshot_quotidien,
+        analytical_batch.recalculer_budgets_actifs,
+        analytical_batch.alerter_depassements_budgetaires,
     ]
 
     cron_jobs = [
@@ -59,8 +54,11 @@ class WorkerSettings:
             relance_batch.executer_relances_quotidiennes,
             weekday={0, 1, 2, 3, 4}, hour=8, minute=0,
         ),
-        # Snapshot trésorerie toutes les 4h (6h, 10h, 14h, 18h Abidjan)
         cron(treasury_batch.snapshot_quotidien, hour={5, 9, 13, 17}, minute=0),
+        # Recalcul budgétaire toutes les nuits à 03h UTC
+        cron(analytical_batch.recalculer_budgets_actifs, hour=3, minute=0),
+        # Alerte dépassement chaque lundi 07h30 UTC
+        cron(analytical_batch.alerter_depassements_budgetaires, weekday=0, hour=7, minute=30),
     ]
 
     on_startup = startup
