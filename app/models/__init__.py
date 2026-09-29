@@ -1,4 +1,5 @@
 """Point d'entrée unique des modèles SQLAlchemy."""
+from app.models.asset import AssetDisposal, AssetRevaluation, DepreciationEntry, FixedAsset
 from app.models.audit import AuditLog
 from app.models.ecriture import Ecriture, EcritureLigne
 from app.models.exercice import Exercice
@@ -25,15 +26,18 @@ from app.models.user import User
 from app.models.whatsapp import WhatsAppLink, WhatsAppMessage
 
 __all__ = [
+    "AssetDisposal", "AssetRevaluation",
     "AuditLog",
     "CashflowForecast",
     "CnpsDeclaration",
+    "DepreciationEntry",
     "DgiDeclaration",
     "Ecriture", "EcritureLigne",
     "Employee",
     "Exercice",
     "FifoLayer",
     "FinancialStatement",
+    "FixedAsset",
     "FreezeCascadeRule", "FreezeEvent", "FreezeTarget",
     "Item", "ItemCategory",
     "Journal",
