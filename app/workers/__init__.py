@@ -1,5 +1,6 @@
 """Point d'entrée des workers ARQ."""
 __all__ = [
+    "analytical_batch",
     "arq_settings",
     "forecast_batch",
     "freeze_propagation",
