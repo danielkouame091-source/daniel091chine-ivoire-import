@@ -74,4 +74,30 @@ class WorkerSettings:
         cron(treasury_batch.snapshot_quotidien, hour={5, 9, 13, 17}, minute=0),
         cron(analytical_batch.recalculer_budgets_actifs, hour=3, minute=0),
         cron(analytical_batch.alerter_depassements_budgetaires, weekday=0, hour=7, minute=30),
-        cron(consolidation_b
+        cron(consolidation_batch.executer_consolidations_mensuelles, day=5, hour=4, minute=0),
+        cron(fne_batch.retry_certifications_fne, minute={0, 15, 30, 45}),
+        cron(fne_batch.sync_stickers_et_alerter, hour={0, 6, 12, 18}, minute=30),
+        cron(audit_batch.audit_quotidien, hour=2, minute=0),
+        cron(audit_batch.audit_hebdomadaire, weekday=6, hour=2, minute=30),
+        cron(audit_batch.audit_mensuel_conformite, day=1, hour=3, minute=0),
+        cron(audit_batch.escalader_findings_critiques, hour={0, 6, 12, 18}, minute=15),
+        cron(project_batch.recalculer_avancements_et_alertes, hour=1, minute=0),
+        cron(project_batch.liberer_retenues_garantie, day=1, hour=4, minute=30),
+        cron(formation_batch.verifier_sla_tickets, minute=0),
+        cron(formation_batch.suggerer_articles_manquants, weekday=0, hour=5, minute=0),
+        # RH : alertes fins de contrat tous les jours à 06h UTC
+        cron(hr_batch.alerte_fins_cdd_et_periodes_essai, hour=6, minute=0),
+        # RH : soldes congés faibles chaque lundi 06h30
+        cron(hr_batch.alerte_soldes_conges_faibles, weekday=0, hour=6, minute=30),
+        # RH : initialisation annuelle 1er janvier à 01h
+        cron(hr_batch.initialiser_soldes_conges_annee, day=1, hour=1, minute=0),
+    ]
+
+    on_startup = startup
+    on_shutdown = shutdown
+    redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
+    max_jobs = 20
+    job_timeout = 900
+    keep_result = 3600
+    max_tries = 3
+    retry_jobs = True
