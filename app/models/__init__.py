@@ -31,28 +31,18 @@ from app.models.stock import (
 )
 from app.models.subscription import Subscription, SubscriptionPayment
 from app.models.tenant import Tenant
+from app.models.treasury import (
+    BankStatement, BankStatementLine, CashForecastWeek, CashPositionSnapshot,
+    ReconciliationSession, TreasuryAccount,
+)
 from app.models.user import User
 from app.models.whatsapp import WhatsAppLink, WhatsAppMessage
 
 __all__ = [
-    "AssetDisposal", "AssetRevaluation", "AuditLog",
-    "CashflowForecast", "CnpsDeclaration",
-    "CreditNote", "CreditNoteLine", "Customer", "CustomerInvoice", "CustomerInvoiceLine",
-    "CustomerPayment",
-    "DeliveryNote", "DeliveryNoteLine",
-    "DepreciationEntry", "DgiDeclaration",
-    "Ecriture", "EcritureLigne", "Employee", "Exercice",
-    "FifoLayer", "FinancialStatement", "FixedAsset",
-    "FreezeCascadeRule", "FreezeEvent", "FreezeTarget",
-    "GoodsReceipt", "GoodsReceiptLine",
-    "Item", "ItemCategory", "Journal", "MmTransaction",
-    "NlpFeedback", "NlpPattern", "NlpSuggestion", "Payslip", "Plan", "PlanComptable",
-    "PurchaseOrder", "PurchaseOrderLine",
-    "Quote", "QuoteLine",
-    "SalesOrder", "SalesOrderLine", "Session",
-    "StockInventory", "StockInventoryLine", "StockLevel", "StockMovement",
-    "Subscription", "SubscriptionPayment",
-    "Supplier", "SupplierInvoice", "SupplierInvoiceLine", "SupplierPayment",
-    "Tenant", "TenantFreezeState", "User", "Warehouse",
-    "WhatsAppLink", "WhatsAppMessage",
+    # ... (inchangé jusqu'à treasury)
+    "BankStatement", "BankStatementLine",
+    "CashForecastWeek", "CashPositionSnapshot",
+    "ReconciliationSession",
+    "TreasuryAccount",
+    # ... (reste inchangé)
 ]
