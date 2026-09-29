@@ -2,6 +2,7 @@
 __all__ = [
     "analytical_batch",
     "arq_settings",
+    "audit_batch",
     "consolidation_batch",
     "fne_batch",
     "forecast_batch",
