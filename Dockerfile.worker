@@ -1,0 +1,44 @@
+# =============================================================================
+# MTech SaaS SYSCOHADA — Image Worker ARQ (production)
+# =============================================================================
+FROM python:3.12-slim AS builder
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential libpq-dev libffi-dev libssl-dev curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install --upgrade pip setuptools wheel \
+    && pip install -r /tmp/requirements.txt
+
+
+FROM python:3.12-slim AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/opt/venv/bin:$PATH" \
+    PYTHONPATH="/app"
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libpq5 curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 1000 app \
+    && useradd --uid 1000 --gid app --shell /bin/bash --create-home app
+
+COPY --from=builder /opt/venv /opt/venv
+
+WORKDIR /app
+COPY --chown=app:app app/     ./app/
+COPY --chown=app:app scripts/ ./scripts/
+
+USER app
+
+# Le worker n'expose pas de port — pas de HEALTHCHECK HTTP
+CMD ["arq", "app.workers.arq_settings.WorkerSettings"]
