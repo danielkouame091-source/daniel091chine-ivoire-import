@@ -10,6 +10,7 @@ from app.routers import (
     journaux,
     mobile_money,
     plan_comptable,
+    purchases,
     reporting,
     stock,
     tenants,
@@ -19,6 +20,6 @@ from app.routers import (
 
 __all__ = [
     "admin_cockpit", "ai", "assets", "auth", "billing", "ecritures", "freeze",
-    "journaux", "mobile_money", "plan_comptable", "reporting", "stock",
-    "tenants", "users", "whatsapp",
+    "journaux", "mobile_money", "plan_comptable", "purchases", "reporting",
+    "stock", "tenants", "users", "whatsapp",
 ]
