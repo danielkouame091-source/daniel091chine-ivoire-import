@@ -9,22 +9,14 @@ from app.routers import (
     journaux,
     mobile_money,
     plan_comptable,
+    reporting,
     tenants,
     users,
     whatsapp,
 )
 
 __all__ = [
-    "admin_cockpit",
-    "ai",
-    "auth",
-    "billing",
-    "ecritures",
-    "freeze",
-    "journaux",
-    "mobile_money",
-    "plan_comptable",
-    "tenants",
-    "users",
-    "whatsapp",
+    "admin_cockpit", "ai", "auth", "billing", "ecritures", "freeze",
+    "journaux", "mobile_money", "plan_comptable", "reporting",
+    "tenants", "users", "whatsapp",
 ]
