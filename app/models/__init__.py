@@ -5,6 +5,11 @@ from app.models.analytical import (
 )
 from app.models.asset import AssetDisposal, AssetRevaluation, DepreciationEntry, FixedAsset
 from app.models.audit import AuditLog
+from app.models.consolidation import (
+    AdjustmentEntry, ConsolidationGroup, ConsolidationRun,
+    EliminationEntry, ExchangeRate, GroupCompany,
+    IntercompanyTransaction, MinorityInterest,
+)
 from app.models.ecriture import Ecriture, EcritureLigne
 from app.models.exercice import Exercice
 from app.models.forecast import CashflowForecast
@@ -43,27 +48,56 @@ from app.models.user import User
 from app.models.whatsapp import WhatsAppLink, WhatsAppMessage
 
 __all__ = [
+    # Analytical
     "AllocationKey", "AllocationKeyLine",
     "AnalyticalAxis", "AnalyticalEntry", "AnalyticalSection",
+    # Asset
     "AssetDisposal", "AssetRevaluation", "AuditLog",
+    # Budget
     "Budget", "BudgetConsumption", "BudgetLine",
+    # Treasury
     "BankStatement", "BankStatementLine",
-    "CashForecastWeek", "CashPositionSnapshot",
-    "CashflowForecast", "CnpsDeclaration",
+    "CashForecastWeek", "CashPositionSnapshot", "CashflowForecast",
+    "CnpsDeclaration",
+    # Consolidation
+    "AdjustmentEntry", "ConsolidationGroup", "ConsolidationRun",
+    "EliminationEntry", "ExchangeRate", "GroupCompany",
+    "IntercompanyTransaction", "MinorityInterest",
+    # Sale
     "CreditNote", "CreditNoteLine", "Customer", "CustomerInvoice", "CustomerInvoiceLine",
-    "CustomerPayment", "DeliveryNote", "DeliveryNoteLine", "DepreciationEntry",
-    "DgiDeclaration", "Ecriture", "EcritureLigne", "Employee", "Exercice",
+    "CustomerPayment", "DeliveryNote", "DeliveryNoteLine",
+    # Depreciation
+    "DepreciationEntry", "DgiDeclaration",
+    # Écriture
+    "Ecriture", "EcritureLigne", "Employee", "Exercice",
+    # Stock
     "FifoLayer", "FinancialStatement", "FixedAsset",
+    # Freeze
     "FreezeCascadeRule", "FreezeEvent", "FreezeTarget",
+    # Purchase
     "GoodsReceipt", "GoodsReceiptLine",
+    # Items
     "Item", "ItemCategory", "Journal", "MmTransaction",
-    "NlpFeedback", "NlpPattern", "NlpSuggestion", "Payslip", "Plan", "PlanComptable",
-    "PurchaseOrder", "PurchaseOrderLine", "Quote", "QuoteLine",
+    # NLP
+    "NlpFeedback", "NlpPattern", "NlpSuggestion",
+    # Payroll
+    "Payslip", "Plan", "PlanComptable",
+    # Purchase
+    "PurchaseOrder", "PurchaseOrderLine",
+    # Quote
+    "Quote", "QuoteLine",
+    # Treasury
     "ReconciliationSession",
+    # Sales
     "SalesOrder", "SalesOrderLine", "Session",
+    # Stock
     "StockInventory", "StockInventoryLine", "StockLevel", "StockMovement",
+    # Subscription
     "Subscription", "SubscriptionPayment",
+    # Purchase
     "Supplier", "SupplierInvoice", "SupplierInvoiceLine", "SupplierPayment",
+    # Tenant
     "Tenant", "TenantFreezeState", "TreasuryAccount",
+    # User
     "User", "Warehouse", "WhatsAppLink", "WhatsAppMessage",
 ]
