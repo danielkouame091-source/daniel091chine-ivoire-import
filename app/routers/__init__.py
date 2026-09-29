@@ -2,6 +2,7 @@
 from app.routers import (
     admin_cockpit,
     ai,
+    assets,
     auth,
     billing,
     ecritures,
@@ -17,7 +18,7 @@ from app.routers import (
 )
 
 __all__ = [
-    "admin_cockpit", "ai", "auth", "billing", "ecritures", "freeze",
+    "admin_cockpit", "ai", "assets", "auth", "billing", "ecritures", "freeze",
     "journaux", "mobile_money", "plan_comptable", "reporting", "stock",
     "tenants", "users", "whatsapp",
 ]
