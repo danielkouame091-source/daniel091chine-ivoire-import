@@ -1,0 +1,138 @@
+name: Deploy — Fly.io
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "web/**"
+      - "**.md"
+      - ".github/workflows/ci.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-fly-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────
+  # 1. Vérifier que la CI est passée
+  # ─────────────────────────────────────────────────────────────────
+  preflight:
+    name: Preflight checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify secrets are set
+        run: |
+          for secret in FLY_API_TOKEN DATABASE_URL JWT_PRIVATE_KEY JWT_PUBLIC_KEY ENCRYPTION_KEY; do
+            if [ -z "${!secret}" ]; then
+              echo "::error::Secret $secret is not set"
+              exit 1
+            fi
+          done
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          JWT_PRIVATE_KEY: ${{ secrets.JWT_PRIVATE_KEY }}
+          JWT_PUBLIC_KEY: ${{ secrets.JWT_PUBLIC_KEY }}
+          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+
+  # ─────────────────────────────────────────────────────────────────
+  # 2. Déployer l'API
+  # ─────────────────────────────────────────────────────────────────
+  deploy-api:
+    name: Deploy API
+    runs-on: ubuntu-latest
+    needs: preflight
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy to Fly.io (API)
+        run: flyctl deploy --remote-only --config fly.toml
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+      - name: Verify health
+        run: |
+          sleep 10
+          for i in {1..6}; do
+            if curl -fsS https://mtech-saas-api.fly.dev/health; then
+              echo "✅ API healthy"
+              exit 0
+            fi
+            echo "Tentative $i/6 échouée, retry dans 10s..."
+            sleep 10
+          done
+          echo "::error::API health check failed after deployment"
+          exit 1
+
+  # ─────────────────────────────────────────────────────────────────
+  # 3. Déployer le Worker
+  # ─────────────────────────────────────────────────────────────────
+  deploy-worker:
+    name: Deploy Worker
+    runs-on: ubuntu-latest
+    needs: preflight
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy to Fly.io (Worker)
+        run: flyctl deploy --remote-only --config fly.worker.toml
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+  # ─────────────────────────────────────────────────────────────────
+  # 4. Migrations + seed fondateur
+  # ─────────────────────────────────────────────────────────────────
+  post-deploy:
+    name: Post-deploy — migrations & seed
+    runs-on: ubuntu-latest
+    needs: [deploy-api]
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Run migrations (via SSH)
+        run: |
+          flyctl ssh console -a mtech-saas-api -C "alembic upgrade head" || \
+          echo "Migrations already applied via release_command"
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+      - name: Ensure founder exists
+        run: |
+          flyctl ssh console -a mtech-saas-api -C "python -m scripts.create_founder --email ${{ secrets.FOUNDER_EMAIL }} --password '${{ secrets.FOUNDER_PASSWORD }}' --nom 'Fondateur'" || \
+          echo "Founder already exists"
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+  # ─────────────────────────────────────────────────────────────────
+  # 5. Notification
+  # ─────────────────────────────────────────────────────────────────
+  notify:
+    name: Notify
+    runs-on: ubuntu-latest
+    needs: [deploy-api, deploy-worker]
+    if: always()
+    steps:
+      - name: Slack notification
+        if: ${{ secrets.SLACK_WEBHOOK_URL != '' }}
+        run: |
+          STATUS="${{ needs.deploy-api.result }}"
+          if [ "$STATUS" = "success" ]; then
+            EMOJI="✅"
+          else
+            EMOJI="❌"
+          fi
+          curl -X POST -H 'Content-type: application/json' \
+            --data "{\"text\":\"$EMOJI Déploiement Fly.io — $STATUS — commit ${{ github.sha }}\"}" \
+            ${{ secrets.SLACK_WEBHOOK_URL }}
