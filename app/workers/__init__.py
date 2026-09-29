@@ -3,6 +3,7 @@ __all__ = [
     "analytical_batch",
     "arq_settings",
     "consolidation_batch",
+    "fne_batch",
     "forecast_batch",
     "freeze_propagation",
     "mm_reconciliation",
