@@ -44,4 +44,46 @@ async def verifier_sla_tickets(ctx: dict[str, Any]) -> dict[str, Any]:
             try:
                 async with AsyncSessionLocal() as sub_db:
                     svc = SupportTicketService(sub_db, tenant_id, tenant_id)
-                   
+                    result = await svc.verifier_sla()
+                    total_depasses += result["sla_depasses_marques"]
+                    await sub_db.commit()
+                    processed += 1
+            except Exception:
+                logger.exception(f"[formation_batch] Échec SLA tenant {tenant_id}")
+
+    return {"tenants_processed": processed, "total_sla_depasses": total_depasses}
+
+
+async def suggerer_articles_manquants(ctx: dict[str, Any]) -> dict[str, Any]:
+    """
+    Analyse les tickets récurrents pour identifier les articles à créer.
+    Génère un rapport consultable par le fondateur.
+    """
+    horizon = datetime.now(timezone.utc) - timedelta(days=30)
+
+    async with AsyncSessionLocal() as db:
+        # Top 20 sujets de tickets sur 30 jours
+        rows = (
+            await db.execute(
+                select(
+                    SupportTicket.sujet,
+                    func.count(SupportTicket.id).label("n"),
+                )
+                .where(
+                    SupportTicket.created_at >= horizon,
+                    SupportTicket.statut.notin_(["annule", "ferme"]),
+                )
+                .group_by(SupportTicket.sujet)
+                .order_by(desc("n"))
+                .limit(20)
+            )
+        ).all()
+
+        suggestions = [
+            {"sujet": r.sujet, "nb_occurrences": int(r.n)}
+            for r in rows if int(r.n) >= 3
+        ]
+
+        logger.info(f"[formation_batch] {len(suggestions)} sujets récurrents identifiés")
+
+    return {"suggestions_articles": suggestions}
