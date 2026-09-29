@@ -98,3 +98,11 @@ from app.routers import (
 app.include_router(stock.router,          prefix=f"{P}/stock",          tags=["stock"])
 
 app.include_router(reporting.router,      prefix=f"{P}/reporting",      tags=["reporting"])
+from app.routers import (
+    admin_cockpit, ai, assets, auth, billing, ecritures, freeze, journaux,
+    mobile_money, plan_comptable, reporting, stock, tenants, users, whatsapp,
+)
+
+# ...
+
+app.include_router(assets.router,         prefix=f"{P}/assets",         tags=["assets"])
