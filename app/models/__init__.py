@@ -15,6 +15,10 @@ from app.models.payroll import (
 )
 from app.models.plan import Plan
 from app.models.plan_comptable import PlanComptable
+from app.models.purchase import (
+    GoodsReceipt, GoodsReceiptLine, PurchaseOrder, PurchaseOrderLine,
+    Supplier, SupplierInvoice, SupplierInvoiceLine, SupplierPayment,
+)
 from app.models.session import Session
 from app.models.stock import (
     FifoLayer, Item, ItemCategory, StockInventory, StockInventoryLine,
@@ -26,30 +30,17 @@ from app.models.user import User
 from app.models.whatsapp import WhatsAppLink, WhatsAppMessage
 
 __all__ = [
-    "AssetDisposal", "AssetRevaluation",
-    "AuditLog",
-    "CashflowForecast",
-    "CnpsDeclaration",
-    "DepreciationEntry",
-    "DgiDeclaration",
-    "Ecriture", "EcritureLigne",
-    "Employee",
-    "Exercice",
-    "FifoLayer",
-    "FinancialStatement",
-    "FixedAsset",
-    "FreezeCascadeRule", "FreezeEvent", "FreezeTarget",
-    "Item", "ItemCategory",
-    "Journal",
-    "MmTransaction",
-    "NlpFeedback", "NlpPattern", "NlpSuggestion",
-    "Payslip",
-    "Plan", "PlanComptable",
-    "Session",
-    "StockInventory", "StockInventoryLine", "StockLevel", "StockMovement",
+    "AssetDisposal", "AssetRevaluation", "AuditLog",
+    "CashflowForecast", "CnpsDeclaration", "DepreciationEntry", "DgiDeclaration",
+    "Ecriture", "EcritureLigne", "Employee", "Exercice", "FifoLayer",
+    "FinancialStatement", "FixedAsset", "FreezeCascadeRule", "FreezeEvent", "FreezeTarget",
+    "GoodsReceipt", "GoodsReceiptLine",
+    "Item", "ItemCategory", "Journal", "MmTransaction",
+    "NlpFeedback", "NlpPattern", "NlpSuggestion", "Payslip", "Plan", "PlanComptable",
+    "PurchaseOrder", "PurchaseOrderLine",
+    "Session", "StockInventory", "StockInventoryLine", "StockLevel", "StockMovement",
     "Subscription", "SubscriptionPayment",
-    "Tenant", "TenantFreezeState",
-    "User",
-    "Warehouse",
+    "Supplier", "SupplierInvoice", "SupplierInvoiceLine", "SupplierPayment",
+    "Tenant", "TenantFreezeState", "User", "Warehouse",
     "WhatsAppLink", "WhatsAppMessage",
 ]
