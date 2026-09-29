@@ -84,3 +84,12 @@ async def health() -> dict:
         "nlp_enabled": settings.nlp_enabled,
         "whatsapp_enabled": settings.whatsapp_enabled,
     }
+# ... (identique à la brique 12) ...
+from app.routers import (
+    admin_cockpit, ai, auth, billing, ecritures, freeze, journaux,
+    mobile_money, plan_comptable, reporting, tenants, users, whatsapp,
+)
+
+# ...
+
+app.include_router(reporting.router,      prefix=f"{P}/reporting",      tags=["reporting"])
