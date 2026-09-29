@@ -6,6 +6,7 @@ __all__ = [
     "consolidation_batch",
     "fne_batch",
     "forecast_batch",
+    "formation_batch",
     "freeze_propagation",
     "mm_reconciliation",
     "nlp_batch",
