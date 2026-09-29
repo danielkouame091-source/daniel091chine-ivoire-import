@@ -9,6 +9,7 @@ from arq.connections import RedisSettings
 from app.core.config import settings
 from app.workers import (
     analytical_batch,
+    consolidation_batch,
     forecast_batch,
     freeze_propagation,
     mm_reconciliation,
@@ -44,6 +45,7 @@ class WorkerSettings:
         treasury_batch.snapshot_quotidien,
         analytical_batch.recalculer_budgets_actifs,
         analytical_batch.alerter_depassements_budgetaires,
+        consolidation_batch.executer_consolidations_mensuelles,
     ]
 
     cron_jobs = [
@@ -55,17 +57,17 @@ class WorkerSettings:
             weekday={0, 1, 2, 3, 4}, hour=8, minute=0,
         ),
         cron(treasury_batch.snapshot_quotidien, hour={5, 9, 13, 17}, minute=0),
-        # Recalcul budgétaire toutes les nuits à 03h UTC
         cron(analytical_batch.recalculer_budgets_actifs, hour=3, minute=0),
-        # Alerte dépassement chaque lundi 07h30 UTC
         cron(analytical_batch.alerter_depassements_budgetaires, weekday=0, hour=7, minute=30),
+        # Consolidation mensuelle le 5 de chaque mois à 04h UTC
+        cron(consolidation_batch.executer_consolidations_mensuelles, day=5, hour=4, minute=0),
     ]
 
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
-    max_jobs = 20
-    job_timeout = 600
-    keep_result = 3600
-    max_tries = 3
+    max_jobs = 10        # consolidation lourde → limiter la concurrence
+    job_timeout = 1800   # 30 min pour les gros groupes
+    keep_result = 7200
+    max_tries = 2
     retry_jobs = True
