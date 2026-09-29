@@ -17,6 +17,7 @@ from app.workers import (
     mm_reconciliation,
     nlp_batch,
     notifications,
+    project_batch,
     relance_batch,
     reporting_batch,
     treasury_batch,
@@ -54,6 +55,8 @@ class WorkerSettings:
         audit_batch.audit_hebdomadaire,
         audit_batch.audit_mensuel_conformite,
         audit_batch.escalader_findings_critiques,
+        project_batch.recalculer_avancements_et_alertes,
+        project_batch.liberer_retenues_garantie,
     ]
 
     cron_jobs = [
@@ -70,14 +73,14 @@ class WorkerSettings:
         cron(consolidation_batch.executer_consolidations_mensuelles, day=5, hour=4, minute=0),
         cron(fne_batch.retry_certifications_fne, minute={0, 15, 30, 45}),
         cron(fne_batch.sync_stickers_et_alerter, hour={0, 6, 12, 18}, minute=30),
-        # Audit quotidien à 02h UTC
         cron(audit_batch.audit_quotidien, hour=2, minute=0),
-        # Audit hebdomadaire : dimanche 02h30
         cron(audit_batch.audit_hebdomadaire, weekday=6, hour=2, minute=30),
-        # Rapport mensuel : 1er du mois à 03h
         cron(audit_batch.audit_mensuel_conformite, day=1, hour=3, minute=0),
-        # Escalade findings critiques : toutes les 6h
-        cron(escalader := audit_batch.escalader_findings_critiques, hour={0, 6, 12, 18}, minute=15),
+        cron(audit_batch.escalader_findings_critiques, hour={0, 6, 12, 18}, minute=15),
+        # Projets : recalcul quotidien à 01h UTC
+        cron(project_batch.recalculer_avancements_et_alertes, hour=1, minute=0),
+        # Libération retenues garantie : 1er de chaque mois à 04h
+        cron(project_batch.liberer_retenues_garantie, day=1, hour=4, minute=30),
     ]
 
     on_startup = startup
