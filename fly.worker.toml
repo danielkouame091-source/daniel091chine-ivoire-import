@@ -1,0 +1,25 @@
+# =============================================================================
+# MTech SaaS SYSCOHADA — Configuration Fly.io (Worker ARQ)
+# Déploiement : fly deploy --config fly.worker.toml
+# =============================================================================
+
+app = "mtech-saas-worker"
+primary_region = "cdg"
+
+[build]
+  dockerfile = "Dockerfile.worker"
+
+[env]
+  ENV = "prod"
+  PYTHONPATH = "/app"
+
+# ⚠️ Pas de http_service : le worker n'expose AUCUN port HTTP.
+# Il se connecte à Redis et consomme la queue.
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  cpus = 1
+
+[deploy]
+  strategy = "rolling"
