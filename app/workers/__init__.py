@@ -8,4 +8,5 @@ __all__ = [
     "notifications",
     "relance_batch",
     "reporting_batch",
+    "treasury_batch",
 ]
