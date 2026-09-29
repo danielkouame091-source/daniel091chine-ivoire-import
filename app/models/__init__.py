@@ -82,3 +82,11 @@ __all__ = [
     "Tenant", "TenantFreezeState", "TreasuryAccount",
     "User", "Warehouse", "WhatsAppLink", "WhatsAppMessage",
 ]
+from app.models.audit_internal import (
+    AuditFinding, AuditRule, AuditRun, AuditTrail,
+    BenfordAnalysis, ComplianceReport,
+)
+
+# Ajouter dans __all__ :
+"AUDIT_FINDING", "AUDIT_RULE", "AUDIT_RUN", "AUDIT_TRAIL",
+"BENFORD_ANALYSIS", "COMPLIANCE_REPORT",
