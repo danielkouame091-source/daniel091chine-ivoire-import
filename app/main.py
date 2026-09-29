@@ -158,3 +158,17 @@ app.include_router(fne.router,            prefix=f"{P}/fne",            tags=["f
 
 # Dans le bloc middlewares, APRÈS TenancyMiddleware :
 app.add_middleware(AuditCaptureMiddleware)
+from app.routers import (
+    admin_cockpit, ai, analytical, assets, audit_internal, auth, billing,
+    consolidation, ecritures, fne, freeze, journaux, mobile_money,
+    plan_comptable, purchases, reporting, sales, stock, tenants, treasury,
+    users, whatsapp,
+)
+from app.middleware.audit_capture import AuditCaptureMiddleware
+
+# Dans les middlewares :
+app.add_middleware(TenancyMiddleware)
+app.add_middleware(AuditCaptureMiddleware)
+
+# Dans les routers :
+app.include_router(audit_internal.router, prefix=f"{P}/audit",           tags=["audit"])
