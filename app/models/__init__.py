@@ -1,4 +1,8 @@
 """Point d'entrée unique des modèles SQLAlchemy."""
+from app.models.analytical import (
+    AllocationKey, AllocationKeyLine, AnalyticalAxis, AnalyticalEntry,
+    AnalyticalSection, Budget, BudgetConsumption, BudgetLine,
+)
 from app.models.asset import AssetDisposal, AssetRevaluation, DepreciationEntry, FixedAsset
 from app.models.audit import AuditLog
 from app.models.ecriture import Ecriture, EcritureLigne
@@ -39,10 +43,27 @@ from app.models.user import User
 from app.models.whatsapp import WhatsAppLink, WhatsAppMessage
 
 __all__ = [
-    # ... (inchangé jusqu'à treasury)
+    "AllocationKey", "AllocationKeyLine",
+    "AnalyticalAxis", "AnalyticalEntry", "AnalyticalSection",
+    "AssetDisposal", "AssetRevaluation", "AuditLog",
+    "Budget", "BudgetConsumption", "BudgetLine",
     "BankStatement", "BankStatementLine",
     "CashForecastWeek", "CashPositionSnapshot",
+    "CashflowForecast", "CnpsDeclaration",
+    "CreditNote", "CreditNoteLine", "Customer", "CustomerInvoice", "CustomerInvoiceLine",
+    "CustomerPayment", "DeliveryNote", "DeliveryNoteLine", "DepreciationEntry",
+    "DgiDeclaration", "Ecriture", "EcritureLigne", "Employee", "Exercice",
+    "FifoLayer", "FinancialStatement", "FixedAsset",
+    "FreezeCascadeRule", "FreezeEvent", "FreezeTarget",
+    "GoodsReceipt", "GoodsReceiptLine",
+    "Item", "ItemCategory", "Journal", "MmTransaction",
+    "NlpFeedback", "NlpPattern", "NlpSuggestion", "Payslip", "Plan", "PlanComptable",
+    "PurchaseOrder", "PurchaseOrderLine", "Quote", "QuoteLine",
     "ReconciliationSession",
-    "TreasuryAccount",
-    # ... (reste inchangé)
+    "SalesOrder", "SalesOrderLine", "Session",
+    "StockInventory", "StockInventoryLine", "StockLevel", "StockMovement",
+    "Subscription", "SubscriptionPayment",
+    "Supplier", "SupplierInvoice", "SupplierInvoiceLine", "SupplierPayment",
+    "Tenant", "TenantFreezeState", "TreasuryAccount",
+    "User", "Warehouse", "WhatsAppLink", "WhatsAppMessage",
 ]
