@@ -13,6 +13,7 @@ from app.workers import (
     mm_reconciliation,
     nlp_batch,
     notifications,
+    relance_batch,
     reporting_batch,
 )
 
@@ -27,25 +28,38 @@ async def shutdown(ctx: dict[str, Any]) -> None:
 
 class WorkerSettings:
     functions = [
+        # Mobile Money
         mm_reconciliation.rapprocher_batch,
         mm_reconciliation.reconcile_one,
+        # Freeze
         freeze_propagation.propager_gel,
         freeze_propagation.appliquer_effets_cascade,
+        # Notifications
         notifications.envoyer_whatsapp,
         notifications.notifier_expiration_abonnement,
+        # NLP
         nlp_batch.traiter_suggestions_en_attente,
+        # Prévisions
         forecast_batch.recalculer_toutes_les_previsions,
+        # Reporting / Déclarations
         reporting_batch.generer_declarations_mensuelles,
         reporting_batch.alerter_echeances_proches,
+        # Relances clients
+        relance_batch.executer_relances_quotidiennes,
     ]
 
     cron_jobs = [
-        # Prévisions quotidiennes à 05h UTC (06h Abidjan)
+        # Prévisions quotidiennes à 05h UTC
         cron(forecast_batch.recalculer_toutes_les_previsions, hour=5, minute=0),
-        # Déclarations mensuelles le 1er de chaque mois à 06h UTC
+        # Déclarations mensuelles le 1er à 06h UTC
         cron(reporting_batch.generer_declarations_mensuelles, day=1, hour=6, minute=0),
         # Alertes échéances chaque lundi à 07h UTC
         cron(reporting_batch.alerter_echeances_proches, weekday=0, hour=7, minute=0),
+        # Relances clients du lundi au vendredi à 08h UTC (09h Abidjan)
+        cron(
+            relance_batch.executer_relances_quotidiennes,
+            weekday={0, 1, 2, 3, 4}, hour=8, minute=0,
+        ),
     ]
 
     on_startup = startup
