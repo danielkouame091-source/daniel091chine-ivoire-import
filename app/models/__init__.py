@@ -15,6 +15,10 @@ from app.models.payroll import (
 from app.models.plan import Plan
 from app.models.plan_comptable import PlanComptable
 from app.models.session import Session
+from app.models.stock import (
+    FifoLayer, Item, ItemCategory, StockInventory, StockInventoryLine,
+    StockLevel, StockMovement, Warehouse,
+)
 from app.models.subscription import Subscription, SubscriptionPayment
 from app.models.tenant import Tenant
 from app.models.user import User
@@ -28,16 +32,20 @@ __all__ = [
     "Ecriture", "EcritureLigne",
     "Employee",
     "Exercice",
+    "FifoLayer",
     "FinancialStatement",
     "FreezeCascadeRule", "FreezeEvent", "FreezeTarget",
+    "Item", "ItemCategory",
     "Journal",
     "MmTransaction",
     "NlpFeedback", "NlpPattern", "NlpSuggestion",
     "Payslip",
     "Plan", "PlanComptable",
     "Session",
+    "StockInventory", "StockInventoryLine", "StockLevel", "StockMovement",
     "Subscription", "SubscriptionPayment",
     "Tenant", "TenantFreezeState",
     "User",
+    "Warehouse",
     "WhatsAppLink", "WhatsAppMessage",
 ]
