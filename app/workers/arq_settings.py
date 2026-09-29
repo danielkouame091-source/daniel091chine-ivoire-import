@@ -15,6 +15,7 @@ from app.workers import (
     notifications,
     relance_batch,
     reporting_batch,
+    treasury_batch,
 )
 
 
@@ -41,25 +42,25 @@ class WorkerSettings:
         nlp_batch.traiter_suggestions_en_attente,
         # Prévisions
         forecast_batch.recalculer_toutes_les_previsions,
-        # Reporting / Déclarations
+        # Reporting
         reporting_batch.generer_declarations_mensuelles,
         reporting_batch.alerter_echeances_proches,
-        # Relances clients
+        # Relances
         relance_batch.executer_relances_quotidiennes,
+        # Trésorerie
+        treasury_batch.snapshot_quotidien,
     ]
 
     cron_jobs = [
-        # Prévisions quotidiennes à 05h UTC
         cron(forecast_batch.recalculer_toutes_les_previsions, hour=5, minute=0),
-        # Déclarations mensuelles le 1er à 06h UTC
         cron(reporting_batch.generer_declarations_mensuelles, day=1, hour=6, minute=0),
-        # Alertes échéances chaque lundi à 07h UTC
         cron(reporting_batch.alerter_echeances_proches, weekday=0, hour=7, minute=0),
-        # Relances clients du lundi au vendredi à 08h UTC (09h Abidjan)
         cron(
             relance_batch.executer_relances_quotidiennes,
             weekday={0, 1, 2, 3, 4}, hour=8, minute=0,
         ),
+        # Snapshot trésorerie toutes les 4h (6h, 10h, 14h, 18h Abidjan)
+        cron(treasury_batch.snapshot_quotidien, hour={5, 9, 13, 17}, minute=0),
     ]
 
     on_startup = startup
