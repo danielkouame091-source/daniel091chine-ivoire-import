@@ -116,4 +116,10 @@ async def envoyer_campagnes_planifiees(ctx: dict[str, Any]) -> dict[str, Any]:
                 lancees += 1
                 logger.info(
                     f"[notif_worker] Campagne {camp.code} lancée : "
-                    f"{result
+                    f"{result.get('nb_queued', 0)} notifications"
+                )
+            except Exception:
+                logger.exception(f"[notif_worker] Échec campagne {camp.id}")
+                await db.rollback()
+
+    return {"campagnes_lancees": lancees}
