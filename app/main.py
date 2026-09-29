@@ -121,4 +121,12 @@ app.include_router(purchases.router,      prefix=f"{P}/purchases",      tags=["p
 
 # ...
 
-app.include_router(sales.router,          prefix=f"{P}/sales",          tags=["sales"])
+app.include_router(sales.router,          prefix=f"{P}/sales",          tags=["sales"])from app.routers import (
+    admin_cockpit, ai, assets, auth, billing, ecritures, freeze, journaux,
+    mobile_money, plan_comptable, purchases, reporting, sales, stock,
+    tenants, treasury, users, whatsapp,
+)
+
+# ...
+
+app.include_router(treasury.router,       prefix=f"{P}/treasury",       tags=["treasury"])
