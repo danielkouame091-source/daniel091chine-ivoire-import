@@ -220,3 +220,14 @@ app.add_middleware(PublicApiAuthMiddleware)   # ⚠️ AVANT les routers
 # Routers
 app.include_router(public_api.router,       prefix=f"{P}/public",       tags=["public-api"])
 app.include_router(public_api_admin.router, prefix=f"{P}/api-admin",    tags=["api-admin"])
+from app.routers import (
+    admin_cockpit, ai, analytical, assets, audit_internal, auth, bi, billing,
+    consolidation, ecritures, fne, formation, freeze, ged, hr, journaux,
+    mobile_money, notifications, plan_comptable, portal, projects, purchases,
+    public_api, public_api_admin, reporting, sales, stock, tenants, treasury,
+    users, whatsapp,
+)
+
+# ...
+
+app.include_router(ged.router,            prefix=f"{P}/ged",            tags=["ged"])
