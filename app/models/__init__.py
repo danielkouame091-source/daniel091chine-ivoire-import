@@ -19,6 +19,11 @@ from app.models.purchase import (
     GoodsReceipt, GoodsReceiptLine, PurchaseOrder, PurchaseOrderLine,
     Supplier, SupplierInvoice, SupplierInvoiceLine, SupplierPayment,
 )
+from app.models.sale import (
+    CreditNote, CreditNoteLine, Customer, CustomerInvoice, CustomerInvoiceLine,
+    CustomerPayment, DeliveryNote, DeliveryNoteLine, Quote, QuoteLine,
+    SalesOrder, SalesOrderLine,
+)
 from app.models.session import Session
 from app.models.stock import (
     FifoLayer, Item, ItemCategory, StockInventory, StockInventoryLine,
@@ -31,14 +36,21 @@ from app.models.whatsapp import WhatsAppLink, WhatsAppMessage
 
 __all__ = [
     "AssetDisposal", "AssetRevaluation", "AuditLog",
-    "CashflowForecast", "CnpsDeclaration", "DepreciationEntry", "DgiDeclaration",
-    "Ecriture", "EcritureLigne", "Employee", "Exercice", "FifoLayer",
-    "FinancialStatement", "FixedAsset", "FreezeCascadeRule", "FreezeEvent", "FreezeTarget",
+    "CashflowForecast", "CnpsDeclaration",
+    "CreditNote", "CreditNoteLine", "Customer", "CustomerInvoice", "CustomerInvoiceLine",
+    "CustomerPayment",
+    "DeliveryNote", "DeliveryNoteLine",
+    "DepreciationEntry", "DgiDeclaration",
+    "Ecriture", "EcritureLigne", "Employee", "Exercice",
+    "FifoLayer", "FinancialStatement", "FixedAsset",
+    "FreezeCascadeRule", "FreezeEvent", "FreezeTarget",
     "GoodsReceipt", "GoodsReceiptLine",
     "Item", "ItemCategory", "Journal", "MmTransaction",
     "NlpFeedback", "NlpPattern", "NlpSuggestion", "Payslip", "Plan", "PlanComptable",
     "PurchaseOrder", "PurchaseOrderLine",
-    "Session", "StockInventory", "StockInventoryLine", "StockLevel", "StockMovement",
+    "Quote", "QuoteLine",
+    "SalesOrder", "SalesOrderLine", "Session",
+    "StockInventory", "StockInventoryLine", "StockLevel", "StockMovement",
     "Subscription", "SubscriptionPayment",
     "Supplier", "SupplierInvoice", "SupplierInvoiceLine", "SupplierPayment",
     "Tenant", "TenantFreezeState", "User", "Warehouse",
