@@ -108,3 +108,13 @@ from app.models.formation import (
 "Article", "ArticleCategory", "ChatbotConversation", "ChatbotMessage",
 "OnboardingPath", "SupportTicket", "TicketMessage", "TutorialStep",
 "UserArticleProgress", "UserOnboardingProgress",
+from app.models.portal import (
+    OnlinePayment, PortalConversation, PortalInvitation, PortalMessage,
+    PortalNotification, PortalSession, PortalUser, SharedDocument,
+    SupplierInvoiceSubmission,
+)
+
+# Dans __all__ :
+"OnlinePayment", "PortalConversation", "PortalInvitation", "PortalMessage",
+"PortalNotification", "PortalSession", "PortalUser", "SharedDocument",
+"SupplierInvoiceSubmission",
