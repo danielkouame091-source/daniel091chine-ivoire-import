@@ -10,6 +10,7 @@ from app.core.config import settings
 from app.workers import (
     analytical_batch,
     consolidation_batch,
+    fne_batch,
     forecast_batch,
     freeze_propagation,
     mm_reconciliation,
@@ -46,6 +47,8 @@ class WorkerSettings:
         analytical_batch.recalculer_budgets_actifs,
         analytical_batch.alerter_depassements_budgetaires,
         consolidation_batch.executer_consolidations_mensuelles,
+        fne_batch.retry_certifications_fne,
+        fne_batch.sync_stickers_et_alerter,
     ]
 
     cron_jobs = [
@@ -59,15 +62,18 @@ class WorkerSettings:
         cron(treasury_batch.snapshot_quotidien, hour={5, 9, 13, 17}, minute=0),
         cron(analytical_batch.recalculer_budgets_actifs, hour=3, minute=0),
         cron(analytical_batch.alerter_depassements_budgetaires, weekday=0, hour=7, minute=30),
-        # Consolidation mensuelle le 5 de chaque mois à 04h UTC
         cron(consolidation_batch.executer_consolidations_mensuelles, day=5, hour=4, minute=0),
+        # FNE : retry toutes les 15 min
+        cron(fne_batch.retry_certifications_fne, minute={0, 15, 30, 45}),
+        # FNE : sync stickers toutes les 6h
+        cron(fne_batch.sync_stickers_et_alerter, hour={0, 6, 12, 18}, minute=30),
     ]
 
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
-    max_jobs = 10        # consolidation lourde → limiter la concurrence
-    job_timeout = 1800   # 30 min pour les gros groupes
-    keep_result = 7200
-    max_tries = 2
+    max_jobs = 20
+    job_timeout = 600
+    keep_result = 3600
+    max_tries = 3
     retry_jobs = True
