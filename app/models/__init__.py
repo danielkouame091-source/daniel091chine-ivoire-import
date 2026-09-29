@@ -128,3 +128,13 @@ from app.models.hr import (
 "Department", "DisciplinaryAction", "EmployeeAbsence", "EmployeeDocument",
 "EmployeeOffboarding", "EmploymentContract", "LeaveBalance", "LeaveRequest",
 "PerformanceReview", "TimeEntry", "Training", "TrainingParticipant",
+from app.models.notification import (
+    Notification, NotificationCampaign, NotificationEvent,
+    NotificationPreference, NotificationSuppression, NotificationTemplate,
+    PushDevice,
+)
+
+# Dans __all__ :
+"Notification", "NotificationCampaign", "NotificationEvent",
+"NotificationPreference", "NotificationSuppression", "NotificationTemplate",
+"PushDevice",
