@@ -106,3 +106,11 @@ from app.routers import (
 # ...
 
 app.include_router(assets.router,         prefix=f"{P}/assets",         tags=["assets"])
+from app.routers import (
+    admin_cockpit, ai, assets, auth, billing, ecritures, freeze, journaux,
+    mobile_money, plan_comptable, purchases, reporting, stock, tenants, users, whatsapp,
+)
+
+# ...
+
+app.include_router(purchases.router,      prefix=f"{P}/purchases",      tags=["purchases"])
