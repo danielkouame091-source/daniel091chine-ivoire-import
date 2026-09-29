@@ -124,4 +124,79 @@ async def audit_mensuel_conformite(ctx: dict[str, Any]) -> dict[str, Any]:
     Génère les rapports de conformité mensuels + Benford.
     """
     today = date.today()
-    debut_m
+    debut_mois = (today.replace(day=1) - timedelta(days=1)).replace(day=1)
+    fin_mois = today.replace(day=1) - timedelta(days=1)
+
+    processed = 0
+    scores: list[float] = []
+
+    async for tenant_id, admin_id in _iter_active_tenants_with_admin():
+        try:
+            async with AsyncSessionLocal() as db:
+                svc = AuditInternalService(db, tenant_id, admin_id)
+
+                # Rapport de conformité
+                report = await svc.generer_rapport_conformite(ComplianceReportRequest(
+                    type_rapport="mensuel",
+                    periode_debut=debut_mois,
+                    periode_fin=fin_mois,
+                    generer_resume_ia=True,
+                ))
+                scores.append(report.score_global)
+
+                # Analyse Benford
+                try:
+                    await svc.analyser_benford(
+                        __import__("app.schemas.audit_internal", fromlist=["BenfordAnalysisRequest"]).BenfordAnalysisRequest(
+                            periode_debut=debut_mois, periode_fin=fin_mois,
+                        )
+                    )
+                except Exception:
+                    logger.debug(f"[audit_batch] Benford échoué pour {tenant_id}")
+
+                await db.commit()
+                processed += 1
+        except Exception:
+            logger.exception(f"[audit_batch] Échec audit mensuel {tenant_id}")
+
+    score_moyen = sum(scores) / len(scores) if scores else 0.0
+    return {
+        "tenants_processed": processed,
+        "score_moyen_conformite": round(score_moyen, 2),
+    }
+
+
+async def escalader_findings_critiques(ctx: dict[str, Any]) -> dict[str, Any]:
+    """
+    Escalade automatique au fondateur des findings critiques non résolus
+    depuis plus de 48h.
+    """
+    seuil_date = datetime.now(timezone.utc) - timedelta(hours=48)
+    nb_escalades = 0
+
+    async with AsyncSessionLocal() as db:
+        from app.models.audit_internal import AuditFinding
+        from app.services.audit_internal_service import AuditInternalService
+
+        rows = (
+            await db.execute(
+                select(AuditFinding).where(
+                    AuditFinding.severite == "critique",
+                    AuditFinding.statut.in_(["nouveau", "en_cours"]),
+                    AuditFinding.escalade_fondateur.is_(False),
+                    AuditFinding.created_at < seuil_date,
+                )
+            )
+        ).scalars().all()
+
+        for f in rows:
+            try:
+                svc = AuditInternalService(db, f.tenant_id, None)
+                await svc.escalader_finding(f.id, "Auto-escalade : non résolu après 48h")
+                nb_escalades += 1
+            except Exception:
+                logger.exception(f"[audit_batch] Échec escalade {f.id}")
+
+        await db.commit()
+
+    return {"findings_escalades": nb_escalades}
