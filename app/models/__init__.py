@@ -98,3 +98,13 @@ from app.models.project import (
 # Dans __all__ :
 "ProgressBilling", "ProgressBillingLine", "Project", "ProjectCost",
 "ProjectMilestone", "ProjectPhase", "ProjectResourceAssignment", "ProjectTask",
+from app.models.formation import (
+    Article, ArticleCategory, ChatbotConversation, ChatbotMessage,
+    OnboardingPath, SupportTicket, TicketMessage, TutorialStep,
+    UserArticleProgress, UserOnboardingProgress,
+)
+
+# Dans __all__ :
+"Article", "ArticleCategory", "ChatbotConversation", "ChatbotMessage",
+"OnboardingPath", "SupportTicket", "TicketMessage", "TutorialStep",
+"UserArticleProgress", "UserOnboardingProgress",
