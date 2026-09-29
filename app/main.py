@@ -182,3 +182,13 @@ from app.routers import (
 # ...
 
 app.include_router(formation.router,      prefix=f"{P}/formation",      tags=["formation"])
+from app.routers import (
+    admin_cockpit, ai, analytical, assets, audit_internal, auth, billing,
+    consolidation, ecritures, fne, formation, freeze, hr, journaux,
+    mobile_money, plan_comptable, portal, projects, purchases, reporting,
+    sales, stock, tenants, treasury, users, whatsapp,
+)
+
+# ...
+
+app.include_router(hr.router,             prefix=f"{P}/hr",             tags=["hr"])
