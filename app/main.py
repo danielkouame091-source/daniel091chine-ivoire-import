@@ -154,4 +154,7 @@ app.include_router(consolidation.router,  prefix=f"{P}/consolidation",  tags=["c
 
 # ...
 
-app.include_router(fne.router,            prefix=f"{P}/fne",            tags=["fne"])
+app.include_router(fne.router,            prefix=f"{P}/fne",            tags=["fne"])from app.middleware.audit_capture import AuditCaptureMiddleware
+
+# Dans le bloc middlewares, APRÈS TenancyMiddleware :
+app.add_middleware(AuditCaptureMiddleware)
