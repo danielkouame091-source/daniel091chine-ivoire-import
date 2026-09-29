@@ -10,6 +10,7 @@ __all__ = [
     "mm_reconciliation",
     "nlp_batch",
     "notifications",
+    "project_batch",
     "relance_batch",
     "reporting_batch",
     "treasury_batch",
