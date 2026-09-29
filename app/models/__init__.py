@@ -146,3 +146,11 @@ from app.models.public_api import (
 # Dans __all__ :
 "ApiClient", "ApiKey", "ApiUsageAggregate", "ApiUsageLog",
 "IdempotencyKey", "WebhookDelivery", "WebhookEndpoint",
+from app.models.ged import (
+    Document, DocumentAccessLog, DocumentFolder, DocumentOCRResult,
+    DocumentShare, DocumentSignature, DocumentVersion,
+)
+
+# Dans __all__ :
+"Document", "DocumentAccessLog", "DocumentFolder", "DocumentOCRResult",
+"DocumentShare", "DocumentSignature", "DocumentVersion",
