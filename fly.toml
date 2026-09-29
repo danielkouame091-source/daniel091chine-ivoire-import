@@ -1,0 +1,49 @@
+# =============================================================================
+# MTech SaaS SYSCOHADA — Configuration Fly.io (API FastAPI)
+# Déploiement : fly deploy --config fly.toml
+# =============================================================================
+
+app = "mtech-saas-api"
+primary_region = "cdg"   # Paris (proche Abidjan, latence < 100ms)
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  ENV = "prod"
+  APP_NAME = "MTech SaaS SYSCOHADA"
+  API_PREFIX = "/api/v1"
+  FORECAST_HORIZON_DAYS = "90"
+  FORECAST_MIN_HISTORY_DAYS = "30"
+  PORT = "8000"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = "stop"      # arrêt complet → coût zéro quand inactif
+  auto_start_machines = true
+  min_machines_running = 1         # au moins 1 instance toujours chaude
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 250
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  cpus = 1
+
+[deploy]
+  release_command = "alembic upgrade head"
+  strategy = "rolling"
+
+[checks]
+  [checks.health]
+    grace_period = "10s"
+    interval = "15s"
+    method = "GET"
+    path = "/health"
+    port = 8000
+    timeout = "3s"
+    type = "http"
