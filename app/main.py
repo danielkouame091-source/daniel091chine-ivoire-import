@@ -202,3 +202,21 @@ from app.routers import (
 # ...
 
 app.include_router(notifications.router,  prefix=f"{P}/notifications",  tags=["notifications"])
+from app.routers import (
+    admin_cockpit, ai, analytical, assets, audit_internal, auth, bi, billing,
+    consolidation, ecritures, fne, formation, freeze, hr, journaux,
+    mobile_money, notifications, plan_comptable, portal, projects, purchases,
+    public_api, public_api_admin, reporting, sales, stock, tenants, treasury,
+    users, whatsapp,
+)
+from app.middleware.public_api_auth import PublicApiAuthMiddleware
+
+# Middlewares (ordre critique)
+app.add_middleware(CORSMiddleware, ...)
+app.add_middleware(TenancyMiddleware)
+app.add_middleware(AuditCaptureMiddleware)
+app.add_middleware(PublicApiAuthMiddleware)   # ⚠️ AVANT les routers
+
+# Routers
+app.include_router(public_api.router,       prefix=f"{P}/public",       tags=["public-api"])
+app.include_router(public_api_admin.router, prefix=f"{P}/api-admin",    tags=["api-admin"])
