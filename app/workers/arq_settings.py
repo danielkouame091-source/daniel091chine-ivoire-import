@@ -182,3 +182,11 @@ async def shutdown_analytics(ctx: dict) -> None:
                 await task
             except asyncio.CancelledError:
                 pass
+class WorkerSettings:
+    functions = [
+        # ... fonctions existantes ...
+        start_analytics_consumer,
+    ]
+
+    on_startup = startup_analytics
+    on_shutdown = shutdown_analytics
