@@ -11,7 +11,8 @@ from app.workers import (
     analytical_batch, audit_batch, bi_batch, consolidation_batch, fne_batch,
     forecast_batch, formation_batch, freeze_propagation, ged_batch, hr_batch,
     mm_reconciliation, nlp_batch, notification_batch, notifications,
-    project_batch, relance_batch, reporting_batch, treasury_batch, webhook_batch,
+    privacy_batch, project_batch, relance_batch, reporting_batch,
+    treasury_batch, webhook_batch,
 )
 
 
@@ -68,6 +69,10 @@ class WorkerSettings:
         ged_batch.alerter_documents_expires,
         ged_batch.nettoyer_partages_expires,
         ged_batch.alerter_destruction_proche,
+        privacy_batch.alerter_dsr_urgents,
+        privacy_batch.alerter_breach_non_notifiees,
+        privacy_batch.purger_consentements_expires,
+        privacy_batch.rapport_mensuel_conformite,
     ]
 
     cron_jobs = [
@@ -102,13 +107,16 @@ class WorkerSettings:
         cron(webhook_batch.nettoyer_anciennes_livraisons, hour=5, minute=0),
         cron(webhook_batch.nettoyer_idempotency_expire, hour=5, minute=15),
         cron(webhook_batch.agreger_usage_api, minute=30),
-        # GED : OCR relancé sur documents en attente toutes les 30 min
-        cron(ged_batch.executer_ocr_document, minute={0, 30}),   # (à adapter : itérer sur les en attente)
-        # GED : nettoyages quotidiens
+        cron(ged_batch.executer_ocr_document, minute={0, 30}),
         cron(ged_batch.convertir_pdf_a, hour=4, minute=30),
         cron(ged_batch.alerter_documents_expires, hour=7, minute=0),
         cron(ged_batch.nettoyer_partages_expires, hour=6, minute=0),
         cron(ged_batch.alerter_destruction_proche, day=1, hour=7, minute=15),
+        # Privacy : alertes quotidiennes
+        cron(privacy_batch.alerter_dsr_urgents, hour=7, minute=30),
+        cron(privacy_batch.alerter_breach_non_notifiees, hour={0, 6, 12, 18}, minute=45),
+        cron(privacy_batch.purger_consentements_expires, hour=3, minute=30),
+        cron(privacy_batch.rapport_mensuel_conformite, day=1, hour=8, minute=0),
     ]
 
     on_startup = startup
