@@ -244,4 +244,156 @@ async def notify_authority(
 @router.post("/breaches/{breach_id}/notifier-personnes", response_model=DataBreachOut)
 async def notify_persons(
     breach_id: UUID,
-    data: DataBre
+    data: DataBreachNotifyPersonsIn,
+    current_tenant: CurrentTenant,
+    current_user: RequireAdminTenant,
+    db: TenantDBSession,
+) -> DataBreachOut:
+    svc = PrivacyService(db, current_tenant.id, current_user.id)
+    b = await svc.notifier_personnes(breach_id, data.contenu_notification)
+    return DataBreachOut.model_validate(b)
+
+
+@router.post("/breaches/{breach_id}/cloturer", response_model=DataBreachOut)
+async def close_breach(
+    breach_id: UUID,
+    current_tenant: CurrentTenant,
+    current_user: RequireAdminTenant,
+    db: TenantDBSession,
+) -> DataBreachOut:
+    svc = PrivacyService(db, current_tenant.id, current_user.id)
+    b = await svc.cloturer_breach(breach_id)
+    return DataBreachOut.model_validate(b)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# DPO
+# ═════════════════════════════════════════════════════════════════════════════
+@router.get("/dpo", response_model=DPOOut | None)
+async def get_dpo(
+    current_tenant: CurrentTenant,
+    current_user: CurrentUser,
+    db: TenantDBSession,
+) -> DPOOut | None:
+    svc = PrivacyService(db, current_tenant.id, current_user.id)
+    dpo = await svc.get_dpo_actif()
+    return DPOOut.model_validate(dpo) if dpo else None
+
+
+@router.post("/dpo", response_model=DPOOut, status_code=201)
+async def create_dpo(
+    data: DPOCreate,
+    current_tenant: CurrentTenant,
+    current_user: RequireAdminTenant,
+    _: RequireActiveSubscription,
+    db: TenantDBSession,
+) -> DPOOut:
+    svc = PrivacyService(db, current_tenant.id, current_user.id)
+    dpo = await svc.creer_dpo(data.model_dump())
+    return DPOOut.model_validate(dpo)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# DOCUMENTS LÉGAUX
+# ═════════════════════════════════════════════════════════════════════════════
+@router.get("/legal-documents/{type_document}", response_model=LegalDocumentOut | None)
+async def get_legal_document(
+    type_document: str,
+    current_tenant: CurrentTenant,
+    current_user: CurrentUser,
+    db: TenantDBSession,
+    langue: str = Query("fr"),
+) -> LegalDocumentOut | None:
+    svc = PrivacyService(db, current_tenant.id, current_user.id)
+    doc = await svc.get_document_legal_actif(type_document, langue)
+    return LegalDocumentOut.model_validate(doc) if doc else None
+
+
+@router.post("/legal-documents", response_model=LegalDocumentOut, status_code=201)
+async def create_legal_document(
+    data: LegalDocumentCreate,
+    current_tenant: CurrentTenant,
+    current_user: RequireAdminTenant,
+    _: RequireActiveSubscription,
+    db: TenantDBSession,
+) -> LegalDocumentOut:
+    svc = PrivacyService(db, current_tenant.id, current_user.id)
+    doc = await svc.creer_document_legal(data)
+    return LegalDocumentOut.model_validate(doc)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# COOKIES
+# ═════════════════════════════════════════════════════════════════════════════
+@router.post("/cookies/consent", response_model=CookieConsentOut)
+async def cookie_consent(
+    data: CookieConsentIn,
+    current_tenant: CurrentTenant,
+    current_user: CurrentUser,
+    db: TenantDBSession,
+) -> CookieConsentOut:
+    svc = PrivacyService(db, current_tenant.id, current_user.id)
+    consent = await svc.enregistrer_consentement_cookies(
+        data.session_id, data.model_dump(exclude={"session_id"})
+    )
+    return CookieConsentOut.model_validate(consent)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# SOUS-TRAITANTS
+# ═════════════════════════════════════════════════════════════════════════════
+@router.get("/processors", response_model=list[DataProcessorOut])
+async def list_processors(
+    current_tenant: CurrentTenant,
+    current_user: RequireAdminTenant,
+    db: TenantDBSession,
+    actif_only: bool = Query(True),
+) -> list[DataProcessorOut]:
+    svc = PrivacyService(db, current_tenant.id, current_user.id)
+    rows = await svc.lister_sous_traitants(actif_only)
+    return [DataProcessorOut.model_validate(p) for p in rows]
+
+
+@router.post("/processors", response_model=DataProcessorOut, status_code=201)
+async def create_processor(
+    data: DataProcessorCreate,
+    current_tenant: CurrentTenant,
+    current_user: RequireAdminTenant,
+    _: RequireActiveSubscription,
+    db: TenantDBSession,
+) -> DataProcessorOut:
+    svc = PrivacyService(db, current_tenant.id, current_user.id)
+    p = await svc.creer_sous_traitant(data)
+    return DataProcessorOut.model_validate(p)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# AIPD
+# ═════════════════════════════════════════════════════════════════════════════
+@router.post("/impact-assessments", response_model=ImpactAssessmentOut, status_code=201)
+async def create_aipd(
+    data: ImpactAssessmentCreate,
+    current_tenant: CurrentTenant,
+    current_user: RequireAdminTenant,
+    _: RequireActiveSubscription,
+    db: TenantDBSession,
+) -> ImpactAssessmentOut:
+    svc = PrivacyService(db, current_tenant.id, current_user.id)
+    a = await svc.creer_aipd(data)
+    return ImpactAssessmentOut.model_validate(a)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# PORTABILITÉ
+# ═════════════════════════════════════════════════════════════════════════════
+@router.post("/portability/export", response_model=PortabilityExportOut)
+async def export_portability(
+    data: PortabilityExportIn,
+    current_tenant: CurrentTenant,
+    current_user: RequireAdminTenant,
+    _: RequireActiveSubscription,
+    db: TenantDBSession,
+) -> PortabilityExportOut:
+    """Export des données personnelles (JSON/CSV/XLSX) pour portabilité."""
+    svc = PortabilityService(db, current_tenant.id, current_user.id)
+    return await svc.exporter(data)
