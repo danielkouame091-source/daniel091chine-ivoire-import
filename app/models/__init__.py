@@ -154,3 +154,13 @@ from app.models.ged import (
 # Dans __all__ :
 "Document", "DocumentAccessLog", "DocumentFolder", "DocumentOCRResult",
 "DocumentShare", "DocumentSignature", "DocumentVersion",
+from app.models.privacy import (
+    ConsentRecord, CookieConsent, DataBreach, DataProcessor,
+    DataProtectionOfficer, DataSubjectRequest, ImpactAssessment,
+    LegalDocument, ProcessingRecord, RequestActionLog,
+)
+
+# Dans __all__ :
+"ConsentRecord", "CookieConsent", "DataBreach", "DataProcessor",
+"DataProtectionOfficer", "DataSubjectRequest", "ImpactAssessment",
+"LegalDocument", "ProcessingRecord", "RequestActionLog",
