@@ -112,4 +112,85 @@ async def reset_compteurs_quotidiens(ctx: dict[str, Any]) -> dict[str, Any]:
         result = await db.execute(
             update(ExtensionInstallation)
             .where(
-                (ExtensionInstallation.nb_appels_j
+                (ExtensionInstallation.nb_appels_jour > 0)
+                | (ExtensionInstallation.nb_erreurs_jour > 0)
+            )
+            .values(nb_appels_jour=0, nb_erreurs_jour=0)
+        )
+        await db.commit()
+        return {"compteurs_reset": result.rowcount or 0}
+
+
+async def verifier_abonnements_expires(ctx: dict[str, Any]) -> dict[str, Any]:
+    """Désactive les installations dont l'abonnement a expiré."""
+    today = date.today()
+    expires = 0
+
+    async with AsyncSessionLocal() as db:
+        rows = (
+            await db.execute(
+                select(ExtensionInstallation).where(
+                    ExtensionInstallation.statut == StatutInstallation.ACTIVE,
+                    ExtensionInstallation.abonnement_fin.isnot(None),
+                    ExtensionInstallation.abonnement_fin < today,
+                )
+            )
+        ).scalars().all()
+
+        for inst in rows:
+            # Vérifier si en période d'essai
+            if inst.essai_fin and inst.essai_fin >= today:
+                continue
+
+            inst.statut = StatutInstallation.EXPIREE
+            expires += 1
+            logger.info(
+                f"[marketplace_batch] Installation {inst.id} expirée "
+                f"(fin : {inst.abonnement_fin})"
+            )
+
+        await db.commit()
+        return {"installations_expirees": expires}
+
+
+async def calculer_revenus_publishers(ctx: dict[str, Any]) -> dict[str, Any]:
+    """
+    Calcule les revenus des publishers (mensuel).
+    Appelé le 1er du mois.
+    """
+    from sqlalchemy import func
+    from app.models.marketplace import MarketplaceTransaction, Publisher
+    from app.core.marketplace_syscohada import TypeTransactionMarketplace
+
+    today = date.today()
+    mois_precedent_fin = today.replace(day=1) - timedelta(days=1)
+    mois_precedent_debut = mois_precedent_fin.replace(day=1)
+    debut_dt = datetime.combine(mois_precedent_debut, datetime.min.time()).replace(tzinfo=timezone.utc)
+    fin_dt = datetime.combine(mois_precedent_fin, datetime.max.time()).replace(tzinfo=timezone.utc)
+
+    async with AsyncSessionLocal() as db:
+        rows = (
+            await db.execute(
+                select(
+                    MarketplaceTransaction.publisher_id,
+                    func.sum(MarketplaceTransaction.montant_publisher_xof).label("total"),
+                )
+                .where(
+                    MarketplaceTransaction.created_at.between(debut_dt, fin_dt),
+                    MarketplaceTransaction.statut == "payee",
+                    MarketplaceTransaction.publisher_id.isnot(None),
+                )
+                .group_by(MarketplaceTransaction.publisher_id)
+            )
+        ).all()
+
+        for pub_id, total in rows:
+            pub = await db.scalar(select(Publisher).where(Publisher.id == pub_id))
+            if pub:
+                logger.info(
+                    f"[marketplace_batch] Publisher {pub.slug} : "
+                    f"{int(total or 0):,} XOF à reverser".replace(",", " ")
+                )
+
+        await db.commit()
+        return {"publishers_traites": len(rows)}
