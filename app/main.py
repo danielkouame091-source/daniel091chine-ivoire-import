@@ -254,3 +254,6 @@ from app.routers import (
 # ...
 
 app.include_router(realtime.router,       prefix=f"{P}/realtime",       tags=["realtime"])
+from app.routers import chatbot
+# ...
+app.include_router(chatbot.router, prefix=f"{P}/chatbot", tags=["chatbot"])
