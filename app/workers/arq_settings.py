@@ -11,13 +11,14 @@ from app.workers import (
     analytical_batch, audit_batch, bi_batch, consolidation_batch, fne_batch,
     forecast_batch, formation_batch, freeze_propagation, ged_batch, hr_batch,
     marketplace_batch, mm_reconciliation, nlp_batch, notification_batch,
-    notifications, privacy_batch, project_batch, relance_batch,
+    notifications, privacy_batch, project_batch, realtime_batch, relance_batch,
     reporting_batch, treasury_batch, webhook_batch,
 )
 
 
 async def startup(ctx: dict[str, Any]) -> None:
     ctx["env"] = settings.ENV
+    ctx["kafka_bootstrap"] = getattr(settings, "KAFKA_BOOTSTRAP_SERVERS", "redpanda:9092")
 
 
 async def shutdown(ctx: dict[str, Any]) -> None:
@@ -78,6 +79,13 @@ class WorkerSettings:
         marketplace_batch.reset_compteurs_quotidiens,
         marketplace_batch.verifier_abonnements_expires,
         marketplace_batch.calculer_revenus_publishers,
+        # Temps réel
+        realtime_batch.publier_event_kafka,
+        realtime_batch.consumer_kafka_to_clickhouse,
+        realtime_batch.nettoyer_event_buffer,
+        realtime_batch.snapshot_consumer_lag,
+        realtime_batch.envoyer_alerte_notification,
+        realtime_batch.envoyer_alerte_webhook,
     ]
 
     cron_jobs = [
@@ -121,18 +129,21 @@ class WorkerSettings:
         cron(privacy_batch.alerter_breach_non_notifiees, hour={0, 6, 12, 18}, minute=45),
         cron(privacy_batch.purger_consentements_expires, hour=3, minute=30),
         cron(privacy_batch.rapport_mensuel_conformite, day=1, hour=8, minute=0),
-        # Marketplace
         cron(marketplace_batch.suspendre_extensions_problematiques, hour=8, minute=0),
         cron(marketplace_batch.reset_compteurs_quotidiens, hour=0, minute=5),
         cron(marketplace_batch.verifier_abonnements_expires, hour=6, minute=30),
         cron(marketplace_batch.calculer_revenus_publishers, day=1, hour=9, minute=0),
+        # Temps réel — consumer Kafka toutes les 10 secondes
+        cron(realtime_batch.consumer_kafka_to_clickhouse, second={0, 10, 20, 30, 40, 50}),
+        cron(realtime_batch.snapshot_consumer_lag, minute="*/5"),
+        cron(realtime_batch.nettoyer_event_buffer, hour=4, minute=15),
     ]
 
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
-    max_jobs = 40
-    job_timeout = 1200
+    max_jobs = 60
+    job_timeout = 600
     keep_result = 3600
     max_tries = 3
     retry_jobs = True
