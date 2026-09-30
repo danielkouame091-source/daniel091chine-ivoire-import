@@ -10,9 +10,9 @@ from app.core.config import settings
 from app.workers import (
     analytical_batch, audit_batch, bi_batch, consolidation_batch, fne_batch,
     forecast_batch, formation_batch, freeze_propagation, ged_batch, hr_batch,
-    mm_reconciliation, nlp_batch, notification_batch, notifications,
-    privacy_batch, project_batch, relance_batch, reporting_batch,
-    treasury_batch, webhook_batch,
+    marketplace_batch, mm_reconciliation, nlp_batch, notification_batch,
+    notifications, privacy_batch, project_batch, relance_batch,
+    reporting_batch, treasury_batch, webhook_batch,
 )
 
 
@@ -73,6 +73,11 @@ class WorkerSettings:
         privacy_batch.alerter_breach_non_notifiees,
         privacy_batch.purger_consentements_expires,
         privacy_batch.rapport_mensuel_conformite,
+        marketplace_batch.executer_hook_plugin,
+        marketplace_batch.suspendre_extensions_problematiques,
+        marketplace_batch.reset_compteurs_quotidiens,
+        marketplace_batch.verifier_abonnements_expires,
+        marketplace_batch.calculer_revenus_publishers,
     ]
 
     cron_jobs = [
@@ -112,11 +117,15 @@ class WorkerSettings:
         cron(ged_batch.alerter_documents_expires, hour=7, minute=0),
         cron(ged_batch.nettoyer_partages_expires, hour=6, minute=0),
         cron(ged_batch.alerter_destruction_proche, day=1, hour=7, minute=15),
-        # Privacy : alertes quotidiennes
         cron(privacy_batch.alerter_dsr_urgents, hour=7, minute=30),
         cron(privacy_batch.alerter_breach_non_notifiees, hour={0, 6, 12, 18}, minute=45),
         cron(privacy_batch.purger_consentements_expires, hour=3, minute=30),
         cron(privacy_batch.rapport_mensuel_conformite, day=1, hour=8, minute=0),
+        # Marketplace
+        cron(marketplace_batch.suspendre_extensions_problematiques, hour=8, minute=0),
+        cron(marketplace_batch.reset_compteurs_quotidiens, hour=0, minute=5),
+        cron(marketplace_batch.verifier_abonnements_expires, hour=6, minute=30),
+        cron(marketplace_batch.calculer_revenus_publishers, day=1, hour=9, minute=0),
     ]
 
     on_startup = startup
