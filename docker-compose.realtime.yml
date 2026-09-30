@@ -1,0 +1,69 @@
+# Overlay à ajouter au docker-compose.yml principal
+services:
+  redpanda:
+    image: redpandadata/redpanda:v24.2.7
+    container_name: mtech_redpanda
+    command:
+      - redpanda
+      - start
+      - --smp=1
+      - --memory=2G
+      - --reserve-memory=0M
+      - --overprovisioned
+      - --node-id=0
+      - --kafka-addr=PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr=PLAINTEXT://redpanda:9092
+    ports:
+      - "9092:9092"
+      - "9644:9644"     # Admin API
+    volumes:
+      - redpanda_data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -E 'Healthy:.+true' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - mtech_net
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8-alpine
+    container_name: mtech_clickhouse
+    environment:
+      CLICKHOUSE_DB: mtech_analytics
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-mtech_clickhouse_pass}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    ports:
+      - "8123:8123"     # HTTP
+      - "9000:9000"     # Native
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./clickhouse/migrations:/docker-entrypoint-initdb.d:ro
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - mtech_net
+
+  redpanda-console:
+    image: redpandadata/console:v2.7.2
+    container_name: mtech_redpanda_console
+    environment:
+      KAFKA_BROKERS: redpanda:9092
+    ports:
+      - "8080:8080"
+    depends_on:
+      - redpanda
+    networks:
+      - mtech_net
+
+volumes:
+  redpanda_data:
+  clickhouse_data:
