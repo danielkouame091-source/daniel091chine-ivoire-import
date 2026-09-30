@@ -190,3 +190,10 @@ class WorkerSettings:
 
     on_startup = startup_analytics
     on_shutdown = shutdown_analytics
+from app.workers.embedding_worker import indexer_document_async
+
+class WorkerSettings:
+    functions = [
+        # ... fonctions existantes ...
+        indexer_document_async,
+    ]
