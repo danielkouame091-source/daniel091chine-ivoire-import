@@ -8,3 +8,7 @@ __pycache__/
 uploads_dossiers/
 *.pdf
 .DS_Store
+API_URL=https://api.mtech.ci
+API_PUBLIC_URL=https://api.mtech.ci/api/v1/public
+ENV=prod
+APP_VERSION=1.0.0
