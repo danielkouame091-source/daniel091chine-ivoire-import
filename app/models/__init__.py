@@ -174,3 +174,11 @@ from app.models.marketplace import (
 "DeveloperApiToken", "Extension", "ExtensionInstallation", "ExtensionReport",
 "ExtensionReview", "ExtensionVersion", "HookExecution", "InstallationSecret",
 "MarketplaceTransaction", "Publisher",
+from app.models.realtime import (
+    AlertRule, ConsumerLagSnapshot, DataPipeline, EventBuffer,
+    MaterializedView, RealtimeAlert, TopicSchema, WebSocketSession,
+)
+
+# Dans __all__ :
+"AlertRule", "ConsumerLagSnapshot", "DataPipeline", "EventBuffer",
+"MaterializedView", "RealtimeAlert", "TopicSchema", "WebSocketSession",
