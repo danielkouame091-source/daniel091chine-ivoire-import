@@ -1,0 +1,22 @@
+<key>NSCameraUsageDescription</key>
+<string>MTech utilise la caméra pour scanner vos factures et documents comptables.</string>
+
+<key>NSPhotoLibraryUsageDescription</key>
+<string>MTech accède à vos photos pour importer des justificatifs.</string>
+
+<key>NSFaceIDUsageDescription</key>
+<string>Authentifiez-vous avec Face ID pour accéder à vos données financières.</string>
+
+<key>NSAppTransportSecurity</key>
+<dict>
+    <key>NSAllowsArbitraryLoads</key>
+    <false/>
+    <key>NSExceptionDomains</key>
+    <dict>
+        <key>localhost</key>
+        <dict>
+            <key>NSExceptionAllowsInsecureHTTPLoads</key>
+            <true/>
+        </dict>
+    </dict>
+</dict>
