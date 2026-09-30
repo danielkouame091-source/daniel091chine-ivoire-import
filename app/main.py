@@ -242,3 +242,15 @@ from app.routers import (
 # ...
 
 app.include_router(privacy.router,        prefix=f"{P}/privacy",        tags=["privacy"])
+from app.routers import (
+    admin_cockpit, ai, analytical, assets, audit_internal, auth, bi, billing,
+    consolidation, developer, ecritures, fne, formation, freeze, ged, hr,
+    journaux, marketplace, marketplace_admin, mobile_money, notifications,
+    plan_comptable, portal, privacy, projects, purchases, public_api,
+    public_api_admin, realtime, reporting, sales, stock, tenants, treasury,
+    users, whatsapp,
+)
+
+# ...
+
+app.include_router(realtime.router,       prefix=f"{P}/realtime",       tags=["realtime"])
