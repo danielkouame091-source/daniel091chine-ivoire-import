@@ -4,8 +4,8 @@ from app.routers import (
     consolidation, developer, ecritures, fne, formation, freeze, ged, hr,
     journaux, marketplace, marketplace_admin, mobile_money, notifications,
     plan_comptable, portal, privacy, projects, purchases, public_api,
-    public_api_admin, reporting, sales, stock, tenants, treasury, users,
-    whatsapp,
+    public_api_admin, realtime, reporting, sales, stock, tenants, treasury,
+    users, whatsapp,
 )
 
 __all__ = [
@@ -14,6 +14,6 @@ __all__ = [
     "formation", "freeze", "ged", "hr", "journaux", "marketplace",
     "marketplace_admin", "mobile_money", "notifications", "plan_comptable",
     "portal", "privacy", "projects", "purchases", "public_api",
-    "public_api_admin", "reporting", "sales", "stock", "tenants",
+    "public_api_admin", "realtime", "reporting", "sales", "stock", "tenants",
     "treasury", "users", "whatsapp",
 ]
