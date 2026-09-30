@@ -164,3 +164,13 @@ from app.models.privacy import (
 "ConsentRecord", "CookieConsent", "DataBreach", "DataProcessor",
 "DataProtectionOfficer", "DataSubjectRequest", "ImpactAssessment",
 "LegalDocument", "ProcessingRecord", "RequestActionLog",
+from app.models.marketplace import (
+    DeveloperApiToken, Extension, ExtensionInstallation, ExtensionReport,
+    ExtensionReview, ExtensionVersion, HookExecution, InstallationSecret,
+    MarketplaceTransaction, Publisher,
+)
+
+# Dans __all__ :
+"DeveloperApiToken", "Extension", "ExtensionInstallation", "ExtensionReport",
+"ExtensionReview", "ExtensionVersion", "HookExecution", "InstallationSecret",
+"MarketplaceTransaction", "Publisher",
