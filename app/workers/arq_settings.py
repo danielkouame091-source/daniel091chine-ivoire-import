@@ -147,3 +147,38 @@ class WorkerSettings:
     keep_result = 3600
     max_tries = 3
     retry_jobs = True
+from app.workers.analytics_consumer import (
+    run_analytics_consumer,
+    start_analytics_consumer,
+)
+from app.services.alert_engine import alert_engine
+
+
+async def startup_analytics(ctx: dict) -> None:
+    """Démarre le consumer ClickHouse et le moteur d'alertes en tâche de fond."""
+    from app.events.producer import kafka_producer
+
+    # Producer (utilisé par l'API pour publier)
+    await kafka_producer.start()
+
+    # Consumer ClickHouse (tâche de fond)
+    ctx["analytics_task"] = asyncio.create_task(run_analytics_consumer(ctx))
+
+    # Moteur d'alertes (tâche de fond)
+    await alert_engine.start()
+    ctx["alert_task"] = asyncio.create_task(alert_engine.run())
+
+
+async def shutdown_analytics(ctx: dict) -> None:
+    from app.events.producer import kafka_producer
+    await kafka_producer.stop()
+    await alert_engine.stop()
+
+    for key in ("analytics_task", "alert_task"):
+        task = ctx.get(key)
+        if task:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
