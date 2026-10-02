@@ -1,28 +1,7 @@
-# ─── Framework Streamlit ────────────────────────────────────────────────────
+# Application Streamlit — Kelanewin Transit SYDAM Pro Ultra
 streamlit>=1.35.0
-
-# ─── Base de données ─────────────────────────────────────────────────────────
-# SQLite est intégré à Python — pas de dépendance externe nécessaire.
-
-# ─── Data & Analytics ────────────────────────────────────────────────────────
 pandas>=2.0.0
-openpyxl>=3.1.0          # Excel export
-
-# ─── Visualisations ──────────────────────────────────────────────────────────
-plotly>=5.18.0
-
-# ─── PDF ─────────────────────────────────────────────────────────────────────
-reportlab>=4.1.0
-
-# ─── HTTP (taux de change API) ────────────────────────────────────────────────
-requests>=2.31.0
-
-# ─── IA (Groq LLaMA) ─────────────────────────────────────────────────────────
+reportlab>=4.0.0
 groq>=0.9.0
-
-# NOTE : les lignes FastAPI / SQLAlchemy / asyncpg / Redis / arq / aiokafka /
-# argon2-cffi / pyjwt / pyotp / cryptography / pytest / ruff / mypy présentes
-# dans l'ancien requirements.txt étaient des dépendances d'un backend FastAPI
-# INEXISTANT dans ce dépôt. Elles causaient des conflits et des erreurs
-# d'installation inutiles sur Streamlit Cloud. Supprimées.
-# Si vous ajoutez un backend FastAPI, créez un requirements-api.txt séparé.
+passlib[argon2]>=1.7.4
+python-dotenv>=1.0.0
