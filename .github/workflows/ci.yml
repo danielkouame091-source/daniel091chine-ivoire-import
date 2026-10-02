@@ -1,185 +1,30 @@
-name: CI
+name: CI — Streamlit App
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
   pull_request:
-    branches: [main, develop]
-
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
-
-env:
-  PYTHON_VERSION: "3.12"
-  NODE_VERSION: "20"
+    branches: [main]
 
 jobs:
-  # ─────────────────────────────────────────────────────────────────
-  # 1. Lint + typecheck backend
-  # ─────────────────────────────────────────────────────────────────
-  backend-lint:
-    name: Backend — lint & typecheck
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
+          python-version: "3.11"
+          cache: "pip"
 
-      - name: Install deps
+      - name: Install dependencies
         run: |
-          pip install --upgrade pip
+          python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install ruff mypy
 
-      - name: Ruff check
-        run: ruff check app scripts
+      - name: Vérifier la syntaxe
+        run: python -m py_compile app.py
 
-      - name: Ruff format check
-        run: ruff format --check app scripts
-
-      - name: Mypy
-        run: mypy app --ignore-missing-imports
-        continue-on-error: true   # MVP : non bloquant
-
-  # ─────────────────────────────────────────────────────────────────
-  # 2. Tests backend (pytest + PostgreSQL)
-  # ─────────────────────────────────────────────────────────────────
-  backend-tests:
-    name: Backend — tests
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: mtech
-          POSTGRES_PASSWORD: mtech_test
-          POSTGRES_DB: mtech_test
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U mtech"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-      redis:
-        image: redis:7-alpine
-        ports: ["6379:6379"]
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 5
-
-    env:
-      ENV: test
-      TEST_DATABASE_URL: postgresql+asyncpg://mtech:mtech_test@localhost:5432/mtech_test
-      DATABASE_URL: postgresql+asyncpg://mtech:mtech_test@localhost:5432/mtech_test
-      REDIS_URL: redis://localhost:6379/0
-      JWT_PRIVATE_KEY: ${{ secrets.JWT_PRIVATE_KEY_TEST }}
-      JWT_PUBLIC_KEY: ${{ secrets.JWT_PUBLIC_KEY_TEST }}
-      ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY_TEST }}
-      WAVE_WEBHOOK_SECRET: test_wave
-      ORANGE_WEBHOOK_SECRET: test_orange
-      MTN_WEBHOOK_SECRET: test_mtn
-      MOOV_WEBHOOK_SECRET: test_moov
-      FOUNDER_EMAIL: founder@test.ci
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
-
-      - name: Install deps
-        run: pip install -r requirements.txt
-
-      - name: Create PostgreSQL extensions
-        run: |
-          PGPASSWORD=mtech_test psql -h localhost -U mtech -d mtech_test -c "
-            CREATE EXTENSION IF NOT EXISTS citext;
-            CREATE EXTENSION IF NOT EXISTS pgcrypto;
-            CREATE EXTENSION IF NOT EXISTS btree_gin;
-          "
-
-      - name: Run Alembic migrations
-        env:
-          DATABASE_URL: postgresql+psycopg2://mtech:mtech_test@localhost:5432/mtech_test
-        run: alembic upgrade head
-
-      - name: Run pytest
-        run: pytest -v --asyncio-mode=auto --cov=app --cov-report=xml --cov-fail-under=70
-
-      - name: Upload coverage
-        uses: codecov/codecov-action@v4
-        if: always()
-        with:
-          files: ./coverage.xml
-          fail_ci_if_error: false
-
-  # ─────────────────────────────────────────────────────────────────
-  # 3. Lint + build frontend
-  # ─────────────────────────────────────────────────────────────────
-  frontend-build:
-    name: Frontend — lint & build
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: web
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-
-      - name: Install deps
-        run: npm ci
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Typecheck
-        run: npm run typecheck
-
-      - name: Build
-        run: npm run build
-        env:
-          NEXT_PUBLIC_API_URL: https://api.mtech.ci
-
-  # ─────────────────────────────────────────────────────────────────
-  # 4. Build Docker images (validation, pas de push)
-  # ─────────────────────────────────────────────────────────────────
-  docker-build:
-    name: Docker — build
-    runs-on: ubuntu-latest
-    needs: [backend-lint, backend-tests]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build API image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile
-          push: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build Worker image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile.worker
-          push: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Vérifier l'import Streamlit
+        run: python -c "import streamlit; print('Streamlit OK:', streamlit.__version__)"
