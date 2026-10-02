@@ -201,7 +201,9 @@ def tester_rbac_isolation() -> None:
     erp.st.session_state["tenant_id"] = premier
     dossiers_premier = len(erp.lister_dossiers())
     erp.st.session_state["tenant_id"] = int(locataires.iloc[-1]["id"])
-    dossiers_dernier = len(erp.lister_dossiers())
+    dossiers_dernier = len(erp.lister_dossiers())git add .
+git commit -m "Sauvegarde de l'etape precedente fonctionnelle"
+git push origin main
     erp.st.session_state["tenant_id"] = premier
     _verifier(dossiers_dernier != dossiers_premier,
               f"Isolation active (tenant A={dossiers_premier}, tenant B={dossiers_dernier})")
