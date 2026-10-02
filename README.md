@@ -1,3 +1,163 @@
+# SNDGIR & Transit ERP
+
+Plateforme SaaS **multi-tenant** d'ERP comptable, transit douanier et fiscalité pour
+les cabinets d'expertise comptable, directions financières, PME/SARL/SA et
+institutions financières de **Côte d'Ivoire** et de la zone **UEMOA**.
+
+Conçue en concurrence directe ou en intégration avec les écosystèmes de type
+**Sage** et les solutions bancaires ivoiriennes (SGBCI, Ecobank…).
+
+---
+
+## 🚀 Démarrage rapide
+
+```bash
+# 1. Dépendances (Streamlit, pandas, reportlab, groq)
+pip install -r requirements.txt
+
+# 2. Lancer l'application (base SQLite auto-créée et peuplée au 1er démarrage)
+streamlit run sndgir_erp.py
+
+# 3. Valider le cœur métier (52 contrôles, sans Streamlit)
+python3 valider_sndgir.py
+```
+
+### Comptes de démonstration (tenant `Cabinet Excellence Comptable CI`)
+
+| Identifiant | Mot de passe | Rôle |
+|---|---|---|
+| `admin` | `admin123` | Administrateur Système |
+| `expert` | `expert123` | Expert-Comptable signataire |
+| `collab` | `collab123` | Collaborateur |
+| `auditeur` | `audit123` | Auditeur externe |
+
+> ⚠️ **Changez ces mots de passe avant tout déploiement en production.**
+
+---
+
+## 🧩 Périmètre fonctionnel
+
+Le cœur applicatif tient dans un **bloc Python unique et exécutable** :
+`sndgir_erp.py`.
+
+### 1. Multi-tenant & sécurité de niveau bancaire (RegTech)
+- Isolation stricte des données par entreprise cliente : **chaque requête métier
+  est filtrée par `tenant_id`**.
+- **5 rôles granulaires** avec permissions `<module>.<action>` :
+  Administrateur Système, Expert-Comptable signataire, Collaborateur,
+  Auditeur externe, Client final.
+- **Piste d'audit immuable** : chaîne de hachage append-only. Chaque entrée
+  embarque l'empreinte de la précédente ; toute modification ou suppression
+  rétroactive est **détectée** par `verifier_audit()`.
+- **Chiffrement authentifié** des données sensibles (nonce + flux HMAC-SHA256 +
+  étiquette d'intégrité, encodage base64).
+- **Hachage des mots de passe** : Argon2 en priorité, repli PBKDF2-HMAC-SHA256
+  (200 000 itérations).
+- **Masquage automatique des secrets** (clés API, tokens) avant journalisation.
+- **Empreintes SHA-256** pour sceller les documents officiels.
+
+### 2. Moteur comptable SYSCOHADA révisé (standards Sage)
+- **Partie double stricte** : une écriture déséquilibrée ou portant un compte
+  hors plan comptable est **refusée** (`ErreurComptable`).
+- **Journaux auxiliaires et centraux** : Achats `ACQ`, Ventes `VTE`,
+  Banque/Trésorerie `BAN`, Opérations Diverses `OD`.
+- **Automatisation native des flux** — chaque opération génère ses écritures
+  croisées :
+  - `ecritures_frais_transit()` → débours douaniers (hors taxes), fret,
+    surestaries, honoraires soumis à TVA ;
+  - `ecritures_depuis_debours()` → droits et taxes (État 447100 / banque 521000) ;
+  - `ecritures_surestaries()` → charge 628000 / banque ;
+  - `ecritures_quittance_caisse()` → encaissement caisse 571000 / client 411000 ;
+  - `ecritures_achat_import()` → entrée en stock 311000 + droits.
+- **États en temps réel** : Balance Générale, Grand Livre, Journaux,
+  Compte de résultat et Bilan synthétique (SYSCOHADA).
+
+### 3. Transit, import-export & douanes (contexte ivoirien)
+- **Manifestes** maritimes/aériens et **apurement des connaissements (B/L)**,
+  unitaire ou automatique à l'échelle du manifeste.
+- **Calcul des droits** par régime — `C100` (mise à la consommation),
+  `E100` (exportation), `AT` (admission temporaire), `TR` (transit) :
+  - droits de douane (DD) ;
+  - **Prélèvement Communautaire UEMOA** (0,8 %) ;
+  - **Prélèvement Communautaire CEDEAO** (0,5 %) ;
+  - **TVA 18 %** assise sur (CAF + DD + PC + PCC).
+- **Moteur hybride de sélectivité des risques** (canaux **Vert / Bleu / Jaune /
+  Rouge**) par scoring pondéré : écart de taux déclaré, sous-évaluation,
+  montant CAF, ancienneté du fournisseur, sensibilité de la marchandise.
+- **Surestaries portuaires** : franchise armateur, jours de retard, pénalité
+  journalière en **USD convertie en FCFA** au taux en direct
+  (`actualiser_taux_api()` avec repli sur le dernier taux connu).
+- **Documents officiels PDF** :
+  - **Bon à Enlever (BAE)** scellé par empreinte **SHA-256** ;
+  - **Facture transitaire** détaillée distinguant les débours douaniers
+    (refacturés hors taxes), le fret, le transport et les honoraires soumis à TVA.
+
+### 4. Intelligence artificielle & OCR (IDP)
+- **Assistant expert** fiscalité / droit douanier ivoirien connecté à l'API
+  **Groq** (modèle par défaut : `llama-3.1-8b-instant`), avec repli explicite
+  si la clé ou la librairie sont absentes.
+- **Extraction OCR/IDP** de factures fournisseurs (fournisseur, n° de facture,
+  date, montants, désignation) — fonctionne hors-ligne, une sortie OCR externe
+  peut alimenter la même interface.
+- **Cross-checking automatique** : détection des discordances déclaré/extrait et
+  de la **sous-évaluation douanière** par comparaison au prix de référence.
+- **Générateur de communications** (relances, demandes de pièces, courriers
+  administratifs) avec **validation humaine obligatoire** avant toute diffusion.
+
+### 5. Expérience utilisateur & interopérabilité
+- **Dark mode** épuré (glassmorphism, palette iOS), KPI financiers dynamiques,
+  **graphiques Plotly interactifs** avec **repli automatique** sur `st.bar_chart`
+  si Plotly est absent.
+- **Robustesse** : dépendances optionnelles (`plotly`, `groq`, `requests`,
+  `reportlab`, `passlib`) protégées par `try/except` — aucune ImportError ne
+  bloque l'application.
+- **Initialisation automatique** de la base au premier lancement avec un jeu de
+  données professionnel cohérent (plan comptable, journaux, tenant, utilisateurs,
+  articles SH, dossiers).
+
+---
+
+## 🗂️ Architecture
+
+```
+sndgir_erp.py        Application complète (bloc unique exécutable, ~2 440 lignes)
+valider_sndgir.py    Harnais de validation fonctionnelle (52 contrôles)
+requirements.txt     Dépendances Python
+sndgir_erp.db        Base SQLite (créée automatiquement, ignorée par Git)
+```
+
+Déploiement : `Dockerfile`, `docker-compose*.yml`, `Caddyfile`, `fly.toml`,
+`railway.json`. Le point d'entrée FastAPI (`app/main.py`) peut être porté vers
+PostgreSQL ; le moteur métier de `sndgir_erp.py` est transposable via SQLAlchemy.
+
+---
+
+## ⚖️ Mentions & limites (honnêteté)
+
+- Les **taux par défaut** (TVA 18 %, IS/BIC 25 %, PC UEMOA 0,8 %, PCC CEDEAO
+  0,5 %) reflètent le régime général le plus courant en Côte d'Ivoire mais sont
+  **modifiables** à chaque calcul.
+- Les **régimes E100 / AT / TR** sont modélisés par exonération des droits ;
+  les cas particuliers (contingents, suspensions, destinations privilégiées)
+  doivent être affinés selon le tarif douanier en vigueur.
+- Cet outil **ne remplace pas** la validation d'un **expert-comptable agréé** ni
+  d'un **commissionnaire en douane agréé** avant toute déclaration officielle
+  auprès de la DGI ou des Douanes ivoiriennes.
+- Le chiffrement embarqué est une construction portable (HMAC-SHA256 + MAC).
+  Pour une production bancaire, remplacez-la par **AES-256-GCM**
+  (`cryptography`).
+
+---
+
+## ✅ État de validation
+
+```
+52 validations · 0 échec
+Sécurité ✓  Audit immuable ✓  Partie double ✓  Douanes ✓  Surestaries ✓
+OCR/IDP ✓  Transit & B/L ✓  Multi-tenant & RBAC ✓  PDF scellés ✓
+```
+
+
 import io
 import os
 import re
