@@ -1,9 +1,4 @@
--- =====================================================================
--- SCHEMA SQL - KELANEWIN TRANSIT SYDAM PRO ULTRA
--- Moteur : SQLite 3 (Compatible PostgreSQL / MySQL Enterprise)
--- =====================================================================
-
--- Table de référence des articles et du Tarif Extérieur Commun (TEC UEMOA)
+-- schema.sql — Kelanewin Transit SYDAM Pro Ultra (Enterprise Edition)
 CREATE TABLE IF NOT EXISTS articles (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     nom         TEXT UNIQUE NOT NULL,
@@ -12,7 +7,6 @@ CREATE TABLE IF NOT EXISTS articles (
     categorie   TEXT NOT NULL
 );
 
--- Table principale des dossiers d'importation (Chine → Côte d'Ivoire)
 CREATE TABLE IF NOT EXISTS dossiers (
     id                      INTEGER PRIMARY KEY AUTOINCREMENT,
     date                    TEXT NOT NULL,
@@ -35,7 +29,14 @@ CREATE TABLE IF NOT EXISTS dossiers (
     observation             TEXT
 );
 
--- Table de gestion des utilisateurs et des rôles (RBAC)
+CREATE TABLE IF NOT EXISTS fournisseurs_chine (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    nom_usine   TEXT NOT NULL,
+    ville       TEXT NOT NULL, -- Ex: Yiwu, Guangzhou, Shenzhen
+    contact     TEXT,
+    produits    TEXT
+);
+
 CREATE TABLE IF NOT EXISTS users (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     username        TEXT UNIQUE NOT NULL,
@@ -44,7 +45,6 @@ CREATE TABLE IF NOT EXISTS users (
     statut          TEXT NOT NULL DEFAULT 'Actif'
 );
 
--- Table des journaux d'audit et de sécurité (Audit Trail & Traçabilité)
 CREATE TABLE IF NOT EXISTS audit_logs (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     created_at  TEXT NOT NULL,
@@ -53,7 +53,5 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     details     TEXT
 );
 
--- Index pour optimiser les recherches dans le CRM et le suivi des dossiers
 CREATE INDEX IF NOT EXISTS idx_dossiers_client ON dossiers(client);
 CREATE INDEX IF NOT EXISTS idx_dossiers_statut ON dossiers(statut);
-CREATE INDEX IF NOT EXISTS idx_articles_sh ON articles(sh);
