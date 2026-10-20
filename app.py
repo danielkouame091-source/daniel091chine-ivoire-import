@@ -1,7 +1,6 @@
 """
-app.py — Kelanewin Transit SYDAM Pro Ultra (Edition iOS 3D Premium)
-Système intégré de gestion douanière pour l'importation Chine → Côte d'Ivoire.
-Architecture Enterprise Grade & Design System iOS / Glassmorphism 3D
+app.py — Kelanewin Transit SYDAM Pro Ultra (Edition iOS SpringBoard 3D)
+Système intégré de gestion douanière — Expérience Visuelle Immersive type iPhone.
 """
 
 import base64
@@ -456,17 +455,17 @@ def export_excel(df: pd.DataFrame) -> bytes:
         df.to_excel(writer, index=False, sheet_name="Dossiers_Transit")
     return buf.getvalue()
 
-# ─── CONFIGURATION DE LA PAGE & DESIGN 3D iOS ──────────────────────────────────
+# ─── CONFIGURATION DE LA PAGE & DESIGN SPRINGBOARD 3D iOS ──────────────────────
 
 st.set_page_config(
-    page_title="Kelanewin Transit — SYDAM Pro Ultra (iOS 3D Edition)",
+    page_title="Kelanewin Transit — iOS SpringBoard 3D",
     page_icon="🇨🇮",
     layout="wide",
 )
 
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=SF+Pro+Display:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 
 html, body, [class*="css"] {
     font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -474,66 +473,70 @@ html, body, [class*="css"] {
 }
 
 .stApp {
-    background: radial-gradient(circle at 50% 0%, #0F172A 0%, #070A11 100%);
+    background: linear-gradient(135deg, #0A0F1D 0%, #030712 100%);
     background-attachment: fixed;
 }
 
 /* En-tête effet verre 3D iOS */
 .header-banner {
-    background: linear-gradient(135deg, rgba(6, 95, 70, 0.85) 0%, rgba(5, 150, 105, 0.85) 40%, rgba(2, 132, 199, 0.85) 100%);
-    padding: 32px 36px;
-    border-radius: 24px;
+    background: linear-gradient(135deg, rgba(6, 95, 70, 0.9) 0%, rgba(5, 150, 105, 0.9) 50%, rgba(2, 132, 199, 0.9) 100%);
+    padding: 35px 40px;
+    border-radius: 28px;
     color: white;
     margin-bottom: 30px;
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7), inset 0 1px 1px rgba(255, 255, 255, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    backdrop-filter: blur(20px);
+    box-shadow: 0 30px 60px -15px rgba(0, 0, 0, 0.8), inset 0 1px 2px rgba(255, 255, 255, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(25px);
 }
 
 .header-banner h1 {
     font-weight: 800;
-    font-size: 2.1rem;
-    letter-spacing: -0.02em;
-    margin-bottom: 8px;
-    text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    font-size: 2.2rem;
+    letter-spacing: -0.03em;
+    margin-bottom: 10px;
+    text-shadow: 0 2px 6px rgba(0,0,0,0.4);
 }
 
 .header-banner p {
-    font-size: 1.05rem;
+    font-size: 1.1rem;
     opacity: 0.92;
     font-weight: 500;
 }
 
+/* Grille de menu type SpringBoard iOS 3D */
+.springboard-container {
+    background: rgba(15, 23, 42, 0.65);
+    border-radius: 24px;
+    padding: 24px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(20px);
+    box-shadow: 0 20px 40px -15px rgba(0,0,0,0.7);
+    margin-bottom: 25px;
+}
+
 /* Cartes Neumorphisme / Glassmorphism 3D */
 .custom-card {
-    background: rgba(17, 24, 39, 0.75);
-    border-radius: 22px;
-    padding: 30px;
+    background: rgba(17, 24, 39, 0.8);
+    border-radius: 24px;
+    padding: 32px;
     border: 1px solid rgba(255, 255, 255, 0.08);
     margin-bottom: 30px;
-    box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.05);
-    backdrop-filter: blur(16px);
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    backdrop-filter: blur(20px);
 }
 
-.custom-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.1);
-}
-
-/* KPI Cartes 3D iOS */
 .kpi-card {
     background: linear-gradient(145deg, rgba(31, 41, 55, 0.9), rgba(17, 24, 39, 0.95));
-    border-radius: 18px;
-    padding: 22px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow: inset 0 1px 2px rgba(255,255,255,0.1), 0 15px 30px -10px rgba(0,0,0,0.6);
+    border-radius: 20px;
+    padding: 24px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: inset 0 1px 2px rgba(255,255,255,0.1), 0 15px 35px -10px rgba(0,0,0,0.6);
     text-align: center;
-    backdrop-filter: blur(10px);
+    backdrop-filter: blur(12px);
 }
 
 .kpi-title {
-    font-size: 0.82rem;
+    font-size: 0.85rem;
     color: #94A3B8;
     text-transform: uppercase;
     letter-spacing: 0.08em;
@@ -542,33 +545,30 @@ html, body, [class*="css"] {
 }
 
 .kpi-value {
-    font-size: 1.6rem;
+    font-size: 1.7rem;
     font-weight: 800;
     color: #38BDF8;
-    text-shadow: 0 2px 8px rgba(56, 189, 248, 0.25);
+    text-shadow: 0 2px 10px rgba(56, 189, 248, 0.3);
 }
 
-/* Alertes 3D */
-.alert-green { background: rgba(6, 78, 59, 0.85); border-left: 6px solid #10B981; padding: 16px; border-radius: 12px; margin-bottom: 15px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5); }
-.alert-yellow { background: rgba(120, 53, 15, 0.85); border-left: 6px solid #F59E0B; padding: 16px; border-radius: 12px; margin-bottom: 15px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5); }
-.alert-red { background: rgba(127, 29, 29, 0.85); border-left: 6px solid #EF4444; padding: 16px; border-radius: 12px; margin-bottom: 15px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5); }
+.alert-green { background: rgba(6, 78, 59, 0.85); border-left: 6px solid #10B981; padding: 16px; border-radius: 14px; margin-bottom: 15px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5); }
+.alert-yellow { background: rgba(120, 53, 15, 0.85); border-left: 6px solid #F59E0B; padding: 16px; border-radius: 14px; margin-bottom: 15px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5); }
+.alert-red { background: rgba(127, 29, 29, 0.85); border-left: 6px solid #EF4444; padding: 16px; border-radius: 14px; margin-bottom: 15px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5); }
 
-/* Boutons style iOS Premium */
 div[data-testid="stButton"] > button {
-    border-radius: 14px !important;
+    border-radius: 16px !important;
     font-weight: 700 !important;
     letter-spacing: 0.02em;
-    padding: 0.6rem 1.2rem;
-    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    padding: 0.65rem 1.4rem;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    box-shadow: 0 6px 15px rgba(0, 0, 0, 0.4);
 }
 
 div[data-testid="stButton"] > button:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 20px rgba(56, 189, 248, 0.4);
+    transform: translateY(-3px) scale(1.02);
+    box-shadow: 0 10px 25px rgba(56, 189, 248, 0.45);
 }
 
-/* Masquer le menu natif Streamlit en haut */
 #MainMenu, footer { visibility: hidden; }
 </style>
 """, unsafe_allow_html=True)
@@ -616,7 +616,7 @@ if not st.session_state.authenticated:
 
 taux_devises, status_api = fetch_rates()
 
-# ─── BARRE LATÉRALE (SIDEBAR DESIGN 3D) ────────────────────────────────────────
+# ─── BARRE LATÉRALE (SIDEBAR) ──────────────────────────────────────────────────
 
 st.sidebar.title("🇨🇮 KELANEWIN TRANSIT")
 st.sidebar.markdown(f"**Utilisateur :** `{st.session_state.username}`")
@@ -655,14 +655,17 @@ if st.sidebar.button("🚪 Se déconnecter", use_container_width=True):
 
 st.markdown("""
 <div class="header-banner">
-  <h1>📦 KELANEWIN TRANSIT · ENTERPRISE SUITE v4.3</h1>
+  <h1>📦 KELANEWIN TRANSIT · iOS SPRINGBOARD 3D</h1>
   <p>Système Intégré de Gestion Douanière — Importation Chine & International → Côte d'Ivoire (SYDAM Pro)</p>
 </div>
 """, unsafe_allow_html=True)
 
-# ─── NAVIGATION SUPÉRIEURE ULTRA-NETTE (RADIO BOUTONS STYLE iOS DOCK) ───────────
+# ─── MENU NAVIGATION STYLE iOS SPRINGBOARD 3D (LIGNES HAUT EN BAS DE TYPE iPhone) ───
 
-tab_labels = [
+st.markdown('<div class="springboard-container">', unsafe_allow_html=True)
+st.markdown("### 📱 Menu d'Application Principal (iOS Style Grid)")
+
+menu_options = [
     "📈 Dashboard",
     "📄 Cotation & OCR",
     "🚨 Surestaries",
@@ -674,15 +677,26 @@ tab_labels = [
 ]
 is_admin = st.session_state.user_role == "Administrateur"
 if is_admin:
-    tab_labels.append("🔐 Admin & Audit")
+    menu_options.append("🔐 Admin & Audit")
 
-# Utilisation d'un sélecteur horizontal stylisé en mode radio compact pour un rendu "iOS Dock"
-selected_tab = st.radio("Navigation principale", tab_labels, horizontal=True, label_visibility="collapsed")
+# Organisation en colonnes multiples pour créer l'effet de grille d'applications iPhone
+cols = st.columns(3)
+if "selected_app" not in st.session_state:
+    st.session_state.selected_app = "📈 Dashboard"
 
-st.markdown("<br/>", unsafe_allow_html=True)
+for idx, option in enumerate(menu_options):
+    col_target = cols[idx % 3]
+    with col_target:
+        if st.button(option, use_container_width=True):
+            st.session_state.selected_app = option
+
+st.markdown(f"**Module actif :** `{st.session_state.selected_app}`")
+st.markdown('</div>', unsafe_allow_html=True)
+
+selected_tab = st.session_state.selected_app
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# ROUTAGE DES ONGLETS
+# ROUTAGE DES MODULES (ÉCRANS iOS)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 if selected_tab == "📈 Dashboard":
@@ -690,7 +704,7 @@ if selected_tab == "📈 Dashboard":
     st.subheader("📈 Performance Financière & Opérationnelle")
     df_d = get_dossiers()
     if df_d.empty:
-        st.info("Aucun dossier enregistré. Créez votre premier dossier dans l'onglet Cotation & OCR.")
+        st.info("Aucun dossier enregistré. Créez votre premier dossier dans le module Cotation & OCR.")
     else:
         tot_ca    = df_d["total_facture"].sum()
         tot_solde  = df_d["solde_du"].sum()
