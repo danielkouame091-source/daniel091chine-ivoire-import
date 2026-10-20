@@ -1,7 +1,7 @@
 """
 app.py — Kelanewin Transit SYDAM Pro Ultra
 Système intégré de gestion douanière pour l'importation Chine → Côte d'Ivoire.
-Architecture Enterprise Grade — Version 4.2 (Intégrale, Parfaite & Corrigée)
+Architecture Enterprise Grade — Version 4.3 (Propre, Parfaite & Validée)
 """
 
 import base64
@@ -591,7 +591,7 @@ if st.sidebar.button("🚪 Se déconnecter", use_container_width=True):
 
 st.markdown("""
 <div class="header-banner">
-  <h1>📦 KELANEWIN TRANSIT · ENTERPRISE SUITE v4.2</h1>
+  <h1>📦 KELANEWIN TRANSIT · ENTERPRISE SUITE v4.3</h1>
   <p>Système Intégré de Gestion Douanière — Importation Chine & International → Côte d'Ivoire (SYDAM Pro)</p>
 </div>
 """, unsafe_allow_html=True)
@@ -709,12 +709,12 @@ with tab_cotation:
     total_douane, details_douane = calculer_droits_douane(caf_xof, dd_taux, regime_choisi)
 
     # Frais Transit & Port (Abidjan)
-    frais_port = 150000.0  # Manutention, acconage PAD
-    frais_guce = 45000.0   # GUCE / Single Window
-    honoraires = max(100000.0, fob_xof * 0.03)  # Honoraires de transit
+    frais_port = 150000.0
+    frais_guce = 45000.0
+    honoraires = max(100000.0, fob_xof * 0.03)
     total_transit = frais_port + frais_guce + honoraires
 
-    post_acheminement = 120000.0  # Transport port -> entrepôt client
+    post_acheminement = 120000.0
     total_facture = caf_xof + total_douane + total_transit + post_acheminement
 
     st.markdown("---")
