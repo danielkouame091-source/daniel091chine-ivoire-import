@@ -1,7 +1,7 @@
 """
-app.py — Kelanewin Transit SYDAM Pro Ultra
+app.py — Kelanewin Transit SYDAM Pro Ultra (Edition iOS 3D Premium)
 Système intégré de gestion douanière pour l'importation Chine → Côte d'Ivoire.
-Architecture Enterprise Grade — Version 4.3 (Propre, Parfaite & Validée)
+Architecture Enterprise Grade & Design System iOS / Glassmorphism 3D
 """
 
 import base64
@@ -64,7 +64,6 @@ ROLES = ["Administrateur", "Commercial / Déclarant", "Comptable / Trésorerie"]
 # ─── UTILITAIRES & SÉCURITÉ ────────────────────────────────────────────────────
 
 def setting(name: str, default: str = "") -> str:
-    """Lit un secret Streamlit puis la variable d'environnement avec repli sécurisé."""
     try:
         val = st.secrets.get(name, None)
         if val not in (None, ""):
@@ -75,13 +74,11 @@ def setting(name: str, default: str = "") -> str:
 
 
 def hash_password(password: str) -> str:
-    """Hachage cryptographique (SHA-256 avec sel applicatif pour robustesse)."""
     salt = setting("APP_SALT", "KelanewinTransit2026SecureSalt")
     return hashlib.sha256((password + salt).encode("utf-8")).hexdigest()
 
 
 def safe_filename(value: str) -> str:
-    """Nettoie une chaîne pour en faire un nom de fichier valide et sécurisé."""
     cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", value).strip("._") or "document"
     return cleaned[:120]
 
@@ -286,12 +283,6 @@ def create_user(username, password, role) -> None:
             (username, hash_password(password), role),
         )
 
-
-def toggle_user(user_id: int, current_statut: str) -> None:
-    new = "Inactif" if current_statut == "Actif" else "Actif"
-    with db_connection() as conn:
-        conn.execute("UPDATE users SET statut=? WHERE id=?", (new, user_id))
-
 # ─── TAUX DE CHANGE EN TEMPS RÉEL ──────────────────────────────────────────────
 
 @st.cache_data(ttl=3600)
@@ -319,7 +310,7 @@ def fetch_rates() -> tuple[dict, str]:
 def calculer_droits_douane(caf_xof: float, dd_pct: float, regime_code: str) -> tuple[float, str]:
     if "C100" in regime_code:
         tdd = dd_pct / 100.0
-        redev = 0.010 + 0.008 + 0.002  # RS + PCS + PUA (Côte d'Ivoire)
+        redev = 0.010 + 0.008 + 0.002
         droits = caf_xof * (tdd + redev)
         tva = (caf_xof + droits) * 0.18
         total = droits + tva
@@ -465,45 +456,120 @@ def export_excel(df: pd.DataFrame) -> bytes:
         df.to_excel(writer, index=False, sheet_name="Dossiers_Transit")
     return buf.getvalue()
 
-# ─── CONFIGURATION DE LA PAGE STREAMLIT ────────────────────────────────────────
+# ─── CONFIGURATION DE LA PAGE & DESIGN 3D iOS ──────────────────────────────────
 
 st.set_page_config(
-    page_title="Kelanewin Transit — SYDAM Pro Ultra",
+    page_title="Kelanewin Transit — SYDAM Pro Ultra (iOS 3D Edition)",
     page_icon="🇨🇮",
     layout="wide",
 )
 
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
 html, body, [class*="css"] {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    color: #F8FAFC;
 }
-.stApp { background:#070A11; color:#F8FAFC; }
+
+.stApp {
+    background: radial-gradient(circle at 50% 0%, #0F172A 0%, #070A11 100%);
+    background-attachment: fixed;
+}
+
+/* En-tête effet verre 3D iOS */
 .header-banner {
-    background: linear-gradient(135deg, #065F46 0%, #059669 40%, #0284C7 100%);
-    padding:25px 30px; border-radius:20px; color:white; margin-bottom:25px;
-    box-shadow:0 20px 25px -5px rgba(0,0,0,0.6);
-    border:1px solid rgba(255,255,255,0.2);
+    background: linear-gradient(135deg, rgba(6, 95, 70, 0.85) 0%, rgba(5, 150, 105, 0.85) 40%, rgba(2, 132, 199, 0.85) 100%);
+    padding: 32px 36px;
+    border-radius: 24px;
+    color: white;
+    margin-bottom: 30px;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7), inset 0 1px 1px rgba(255, 255, 255, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(20px);
 }
+
+.header-banner h1 {
+    font-weight: 800;
+    font-size: 2.1rem;
+    letter-spacing: -0.02em;
+    margin-bottom: 8px;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+}
+
+.header-banner p {
+    font-size: 1.05rem;
+    opacity: 0.92;
+    font-weight: 500;
+}
+
+/* Cartes Neumorphisme / Glassmorphism 3D */
 .custom-card {
-    background:#111827; border-radius:18px; padding:25px;
-    border:1px solid #1F2937; margin-bottom:25px;
-    box-shadow:8px 8px 20px #030509,-8px -8px 20px #192235;
+    background: rgba(17, 24, 39, 0.75);
+    border-radius: 22px;
+    padding: 30px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    margin-bottom: 30px;
+    box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(16px);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
 }
+
+.custom-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+/* KPI Cartes 3D iOS */
 .kpi-card {
-    background:linear-gradient(145deg,#1f2937,#111827);
-    border-radius:14px; padding:18px; border:1px solid #374151;
-    box-shadow:inset 1px 1px 2px rgba(255,255,255,0.08),0 10px 15px -3px rgba(0,0,0,0.4);
-    text-align:center;
+    background: linear-gradient(145deg, rgba(31, 41, 55, 0.9), rgba(17, 24, 39, 0.95));
+    border-radius: 18px;
+    padding: 22px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: inset 0 1px 2px rgba(255,255,255,0.1), 0 15px 30px -10px rgba(0,0,0,0.6);
+    text-align: center;
+    backdrop-filter: blur(10px);
 }
-.kpi-title { font-size:0.82rem; color:#9CA3AF; text-transform:uppercase; letter-spacing:.05em; margin-bottom:5px; }
-.kpi-value { font-size:1.45rem; font-weight:700; color:#38BDF8; }
-.alert-green { background:#064E3B; border-left:5px solid #10B981; padding:12px; border-radius:8px; margin-bottom:10px; }
-.alert-yellow { background:#78350F; border-left:5px solid #F59E0B; padding:12px; border-radius:8px; margin-bottom:10px; }
-.alert-red { background:#7F1D1D; border-left:5px solid #EF4444; padding:12px; border-radius:8px; margin-bottom:10px; }
-div[data-testid="stButton"] > button { border-radius:12px !important; font-weight:600 !important; }
-#MainMenu, footer { visibility:hidden; }
+
+.kpi-title {
+    font-size: 0.82rem;
+    color: #94A3B8;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+
+.kpi-value {
+    font-size: 1.6rem;
+    font-weight: 800;
+    color: #38BDF8;
+    text-shadow: 0 2px 8px rgba(56, 189, 248, 0.25);
+}
+
+/* Alertes 3D */
+.alert-green { background: rgba(6, 78, 59, 0.85); border-left: 6px solid #10B981; padding: 16px; border-radius: 12px; margin-bottom: 15px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5); }
+.alert-yellow { background: rgba(120, 53, 15, 0.85); border-left: 6px solid #F59E0B; padding: 16px; border-radius: 12px; margin-bottom: 15px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5); }
+.alert-red { background: rgba(127, 29, 29, 0.85); border-left: 6px solid #EF4444; padding: 16px; border-radius: 12px; margin-bottom: 15px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5); }
+
+/* Boutons style iOS Premium */
+div[data-testid="stButton"] > button {
+    border-radius: 14px !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.02em;
+    padding: 0.6rem 1.2rem;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+div[data-testid="stButton"] > button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(56, 189, 248, 0.4);
+}
+
+/* Masquer le menu natif Streamlit en haut */
+#MainMenu, footer { visibility: hidden; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -546,11 +612,11 @@ if not st.session_state.authenticated:
         st.markdown("</div>", unsafe_allow_html=True)
     st.stop()
 
-# ─── RÉCUPÉRATION DES TAUX DE CHANGE ───────────────────────────────────────────
+# ─── TAUX DE CHANGE ────────────────────────────────────────────────────────────
 
 taux_devises, status_api = fetch_rates()
 
-# ─── BARRE LATÉRALE (SIDEBAR) ──────────────────────────────────────────────────
+# ─── BARRE LATÉRALE (SIDEBAR DESIGN 3D) ────────────────────────────────────────
 
 st.sidebar.title("🇨🇮 KELANEWIN TRANSIT")
 st.sidebar.markdown(f"**Utilisateur :** `{st.session_state.username}`")
@@ -594,37 +660,37 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# ─── NAVIGATION PAR ONGLETS (TABS) ─────────────────────────────────────────────
+# ─── NAVIGATION SUPÉRIEURE ULTRA-NETTE (RADIO BOUTONS STYLE iOS DOCK) ───────────
 
 tab_labels = [
     "📈 Dashboard",
     "📄 Cotation & OCR",
     "🚨 Surestaries",
-    "🗺️ Tracking Maritime",
+    "🗺️ Tracking",
     "📂 CRM & Dossiers",
-    "📖 Code des Douanes",
+    "📖 Code Douanes",
     "🤖 Assistant IA",
-    "📚 Base SH & Articles",
+    "📚 Base SH",
 ]
 is_admin = st.session_state.user_role == "Administrateur"
 if is_admin:
     tab_labels.append("🔐 Admin & Audit")
 
-tabs = st.tabs(tab_labels)
+# Utilisation d'un sélecteur horizontal stylisé en mode radio compact pour un rendu "iOS Dock"
+selected_tab = st.radio("Navigation principale", tab_labels, horizontal=True, label_visibility="collapsed")
 
-(tab_dash, tab_cotation, tab_surest, tab_map,
- tab_crm, tab_code, tab_ai, tab_sh) = tabs[:8]
-tab_admin = tabs[8] if is_admin else None
+st.markdown("<br/>", unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# TAB 1 — TABLEAU DE BORD (DASHBOARD)
+# ROUTAGE DES ONGLETS
 # ═══════════════════════════════════════════════════════════════════════════════
-with tab_dash:
+
+if selected_tab == "📈 Dashboard":
     st.markdown('<div class="custom-card">', unsafe_allow_html=True)
     st.subheader("📈 Performance Financière & Opérationnelle")
     df_d = get_dossiers()
     if df_d.empty:
-        st.info("Aucun dossier enregistré. Créez votre premier dossier dans l'onglet Cotation.")
+        st.info("Aucun dossier enregistré. Créez votre premier dossier dans l'onglet Cotation & OCR.")
     else:
         tot_ca    = df_d["total_facture"].sum()
         tot_solde  = df_d["solde_du"].sum()
@@ -667,10 +733,7 @@ with tab_dash:
             st.dataframe(df_d[["date", "client", "article", "total_facture", "statut"]], use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# TAB 2 — COTATION & SIMULATEUR DOUANIER
-# ═══════════════════════════════════════════════════════════════════════════════
-with tab_cotation:
+elif selected_tab == "📄 Cotation & OCR":
     df_articles = get_articles()
     st.markdown('<div class="custom-card">', unsafe_allow_html=True)
     st.subheader("📄 Simulateur de Cotation & Facturation Pro")
@@ -783,10 +846,7 @@ with tab_cotation:
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# TAB 3 — SURESTARIES & FRANCHISES CONTENEURS
-# ═══════════════════════════════════════════════════════════════════════════════
-with tab_surest:
+elif selected_tab == "🚨 Surestaries":
     st.markdown('<div class="custom-card">', unsafe_allow_html=True)
     st.subheader("🚨 Simulateur & Suivi des Surestaries Conteneurs")
     st.caption("Évitez les pénalités d'immobilisation des conteneurs au Port d'Abidjan (PAO)")
@@ -820,10 +880,7 @@ with tab_surest:
                     pass
     st.markdown("</div>", unsafe_allow_html=True)
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# TAB 4 — TRACKING MARITIME & GÉOLOCALISATION
-# ═══════════════════════════════════════════════════════════════════════════════
-with tab_map:
+elif selected_tab == "🗺️ Tracking":
     st.markdown('<div class="custom-card">', unsafe_allow_html=True)
     st.subheader("🗺️ Tracking Maritime en Temps Réel (Route Chine → Abidjan)")
     st.caption("Suivi des navires porte-conteneurs (Ligne Ningbo / Shanghai / Shenzhen → Port Autonome d'Abidjan)")
@@ -843,10 +900,7 @@ with tab_map:
     st.map(map_data, zoom=2)
     st.markdown("</div>", unsafe_allow_html=True)
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# TAB 5 — CRM & GESTION DES DOSSIERS
-# ═══════════════════════════════════════════════════════════════════════════════
-with tab_crm:
+elif selected_tab == "📂 CRM & Dossiers":
     st.markdown('<div class="custom-card">', unsafe_allow_html=True)
     st.subheader("📂 Gestion CRM & Suivi des Dossiers de Transit")
     
@@ -901,10 +955,7 @@ with tab_crm:
         )
     st.markdown("</div>", unsafe_allow_html=True)
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# TAB 6 — CODE DES DOUANES & TARIF EXTÉRIEUR COMMUN (TEC)
-# ═══════════════════════════════════════════════════════════════════════════════
-with tab_code:
+elif selected_tab == "📖 Code Douanes":
     st.markdown('<div class="custom-card">', unsafe_allow_html=True)
     st.subheader("📖 Code des Douanes de Côte d'Ivoire & TEC UEMOA")
     st.caption("Consultez la réglementation douanière, les régimes suspensifs et les taux applicables")
@@ -925,10 +976,7 @@ with tab_code:
     """)
     st.markdown("</div>", unsafe_allow_html=True)
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# TAB 7 — ASSISTANT IA SYDAM
-# ═══════════════════════════════════════════════════════════════════════════════
-with tab_ai:
+elif selected_tab == "🤖 Assistant IA":
     st.markdown('<div class="custom-card">', unsafe_allow_html=True)
     st.subheader("🤖 Assistant IA SYDAM & Réglementation Douanière")
     st.caption("Posez vos questions sur les procédures douanières portuaires à Abidjan, le calcul des taxes ou les litiges SH.")
@@ -949,10 +997,7 @@ with tab_ai:
                     st.error(f"Erreur lors de la consultation de l'IA : {errs}")
     st.markdown("</div>", unsafe_allow_html=True)
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# TAB 8 — BASE SH & ARTICLES
-# ═══════════════════════════════════════════════════════════════════════════════
-with tab_sh:
+elif selected_tab == "📚 Base SH":
     st.markdown('<div class="custom-card">', unsafe_allow_html=True)
     st.subheader("📚 Gestion de la Base de Données SH & Articles")
     
@@ -978,38 +1023,34 @@ with tab_sh:
                     st.error("Veuillez remplir le nom et le code SH.")
     st.markdown("</div>", unsafe_allow_html=True)
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# TAB 9 — ADMINISTRATION & AUDIT LOGS (ADMIN ONLY)
-# ═══════════════════════════════════════════════════════════════════════════════
-if is_admin and tab_admin is not None:
-    with tab_admin:
-        st.markdown('<div class="custom-card">', unsafe_allow_html=True)
-        st.subheader("🔐 Administration Système & Journaux d'Audit (RBAC)")
-        
-        st.markdown("### 👥 Gestion des Utilisateurs")
-        df_u = get_users()
-        st.dataframe(df_u, use_container_width=True)
+elif selected_tab == "🔐 Admin & Audit" and is_admin:
+    st.markdown('<div class="custom-card">', unsafe_allow_html=True)
+    st.subheader("🔐 Administration Système & Journaux d'Audit (RBAC)")
+    
+    st.markdown("### 👥 Gestion des Utilisateurs")
+    df_u = get_users()
+    st.dataframe(df_u, use_container_width=True)
 
-        st.markdown("### ➕ Créer un nouvel utilisateur")
-        with st.form("form_create_user"):
-            new_u = st.text_input("Nom d'utilisateur")
-            new_p = st.text_input("Mot de passe", type="password")
-            new_r = st.selectbox("Rôle", ROLES)
-            sub_u = st.form_submit_button("Créer le compte", type="primary")
-            if sub_u:
-                if new_u and new_p:
-                    try:
-                        create_user(new_u, new_p, new_r)
-                        add_audit(st.session_state.username, "create_user", f"Création utilisateur {new_u}")
-                        st.success(f"Utilisateur {new_u} créé avec succès !")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Erreur : {e}")
-                else:
-                    st.error("Veuillez remplir tous les champs.")
+    st.markdown("### ➕ Créer un nouvel utilisateur")
+    with st.form("form_create_user"):
+        new_u = st.text_input("Nom d'utilisateur")
+        new_p = st.text_input("Mot de passe", type="password")
+        new_r = st.selectbox("Rôle", ROLES)
+        sub_u = st.form_submit_button("Créer le compte", type="primary")
+        if sub_u:
+            if new_u and new_p:
+                try:
+                    create_user(new_u, new_p, new_r)
+                    add_audit(st.session_state.username, "create_user", f"Création utilisateur {new_u}")
+                    st.success(f"Utilisateur {new_u} créé avec succès !")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erreur : {e}")
+            else:
+                st.error("Veuillez remplir tous les champs.")
 
-        st.markdown("---")
-        st.markdown("### 📜 Journaux d'Audit & Sécurité (Audit Logs)")
-        df_logs = get_audit_logs(100)
-        st.dataframe(df_logs, use_container_width=True)
-        st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown("---")
+    st.markdown("### 📜 Journaux d'Audit & Sécurité (Audit Logs)")
+    df_logs = get_audit_logs(100)
+    st.dataframe(df_logs, use_container_width=True)
+    st.markdown("</div>", unsafe_allow_html=True)
