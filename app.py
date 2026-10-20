@@ -144,7 +144,6 @@ def init_db() -> None:
         );
         """)
 
-        # Insertion des articles de référence douanière CI
         default_articles = [
             ("Station Totale Topographique & GNSS/GPS", "9015.80.00", 5.0,  "Topographie"),
             ("Théodolites, Niveaux Optiques & Laser",    "9015.10.00", 5.0,  "Topographie"),
@@ -165,7 +164,6 @@ def init_db() -> None:
             default_articles,
         )
 
-        # Comptes utilisateurs par défaut sécurisés
         default_users = [
             ("admin",      hash_password(setting("APP_ADMIN_PASSWORD",      "transit2026")),  "Administrateur",          "Actif"),
             ("commercial", hash_password(setting("APP_COMMERCIAL_PASSWORD",  "compta2026")),  "Commercial / Déclarant",  "Actif"),
@@ -697,18 +695,15 @@ with tab_cotation:
         fret_devise = st.number_input("Fret international (Devise)", value=3000.0, step=100.0)
         assurance_devise = st.number_input("Assurance maritime (Devise)", value=500.0, step=50.0)
 
-    # Conversion en FCFA
     taux_actuel = TAUX_MAP.get(devise_achat, 85.0)
     fob_xof = montant_devise * taux_actuel
     fret_xof = fret_devise * taux_actuel
     assurance_xof = assurance_devise * taux_actuel
     caf_xof = fob_xof + fret_xof + assurance_xof
 
-    # Calcul Douane
     dd_taux = float(item_row["dd"])
     total_douane, details_douane = calculer_droits_douane(caf_xof, dd_taux, regime_choisi)
 
-    # Frais Transit & Port (Abidjan)
     frais_port = 150000.0
     frais_guce = 45000.0
     honoraires = max(100000.0, fob_xof * 0.03)
