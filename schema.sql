@@ -1,4 +1,4 @@
--- schema.sql — Kelanewin Transit SYDAM Pro Ultra (Enterprise Edition)
+-- schema.sql — Kelanewin Transit SYDAM Pro Ultra (Enterprise Ultimate Edition)
 CREATE TABLE IF NOT EXISTS articles (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     nom         TEXT UNIQUE NOT NULL,
@@ -32,9 +32,20 @@ CREATE TABLE IF NOT EXISTS dossiers (
 CREATE TABLE IF NOT EXISTS fournisseurs_chine (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     nom_usine   TEXT NOT NULL,
-    ville       TEXT NOT NULL, -- Ex: Yiwu, Guangzhou, Shenzhen
+    ville       TEXT NOT NULL,
     contact     TEXT,
     produits    TEXT
+);
+
+CREATE TABLE IF NOT EXISTS paiements_fournisseurs (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    date            TEXT NOT NULL,
+    fournisseur     TEXT NOT NULL,
+    montant_devise  REAL NOT NULL,
+    devise          TEXT NOT NULL,
+    taux_applique   REAL NOT NULL,
+    montant_xof     REAL NOT NULL,
+    statut_paiement TEXT NOT NULL DEFAULT 'Payé'
 );
 
 CREATE TABLE IF NOT EXISTS users (
