@@ -1011,7 +1011,7 @@ if is_admin and tab_admin is not None:
                         st.success(f"Utilisateur {new_u} créé avec succès !")
                         st.rerun()
                     except Exception as e:
-                        st.error(fErreur : {e}")
+                        st.error(f"Erreur : {e}")
                 else:
                     st.error("Veuillez remplir tous les champs.")
 
