@@ -1,5 +1,5 @@
 """
-app.py — Kelanewin Transit SYDAM Pro Ultra (iOS SpringBoard 3D Edition)
+app.py — Kelanewin Transit SYDAM Pro Ultra (iOS SpringBoard 3D Ultimate Edition)
 Système Intégré d'Import-Export Chine → Côte d'Ivoire
 """
 
@@ -131,6 +131,17 @@ def init_db() -> None:
             produits    TEXT
         );
 
+        CREATE TABLE IF NOT EXISTS paiements_fournisseurs (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            date            TEXT NOT NULL,
+            fournisseur     TEXT NOT NULL,
+            montant_devise  REAL NOT NULL,
+            devise          TEXT NOT NULL,
+            taux_applique   REAL NOT NULL,
+            montant_xof     REAL NOT NULL,
+            statut_paiement TEXT NOT NULL DEFAULT 'Payé'
+        );
+
         CREATE TABLE IF NOT EXISTS users (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
             username        TEXT UNIQUE NOT NULL,
@@ -198,6 +209,14 @@ def get_articles() -> pd.DataFrame:
 
 def get_dossiers() -> pd.DataFrame:
     return read_df("SELECT * FROM dossiers ORDER BY id DESC")
+
+
+def get_fournisseurs() -> pd.DataFrame:
+    return read_df("SELECT * FROM fournisseurs_chine ORDER BY id DESC")
+
+
+def get_paiements() -> pd.DataFrame:
+    return read_df("SELECT * FROM paiements_fournisseurs ORDER BY id DESC")
 
 
 def get_users() -> pd.DataFrame:
@@ -594,6 +613,8 @@ st.markdown("### 📱 Menu d'Application Principal (iOS Style Grid)")
 menu_options = [
     "📈 Dashboard",
     "📄 Cotation & Douane",
+    "📦 Calcul CBM & Colisage",
+    "💳 Paiements Fournisseurs",
     "🚨 Surestaries",
     "🗺️ Tracking Chine-Abidjan",
     "📂 CRM & Dossiers",
@@ -684,7 +705,7 @@ elif selected_tab == "📄 Cotation & Douane":
         montant_devise = st.number_input("Facture Fournisseur (Devise)", value=50000.0, step=1000.0)
         quantite_art = st.number_input("Quantité d'unités", value=100, step=1)
         fret_devise = st.number_input("Fret international (Devise)", value=3000.0, step=100.0)
-        assurance_devise = st.number_input("Assurance maritime (Devise)", value=500.0, step=100.0)
+        assurance_devise = st.number_input("Assurance maritime (Devise)", value=500.0, step=50.0)
 
     taux_actuel = TAUX_MAP.get(devise_achat, 85.0)
     fob_xof = montant_devise * taux_actuel
@@ -736,6 +757,71 @@ elif selected_tab == "📄 Cotation & Douane":
                 devise=devise_achat, observation=f"Import Chine - {quantite_art} unités"
             )
             st.success("Dossier enregistré avec succès !")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+elif selected_tab == "📦 Calcul CBM & Colisage":
+    st.markdown('<div class="custom-card">', unsafe_allow_html=True)
+    st.subheader("📦 Calculateur de Volume (CBM) & Groupage Conteneur")
+    st.caption("Optimisez le remplissage de vos conteneurs pour vos marchandises achetées en Chine.")
+    
+    col_c1, col_c2, col_c3 = st.columns(3)
+    with col_c1:
+        longueur_cm = st.number_input("Longueur par carton (cm)", value=50.0, step=1.0)
+    with col_c2:
+        largeur_cm = st.number_input("Largeur par carton (cm)", value=40.0, step=1.0)
+    with col_c3:
+        hauteur_cm = st.number_input("Hauteur par carton (cm)", value=30.0, step=1.0)
+        
+    nb_cartons = st.number_input("Nombre total de cartons", value=200, step=1)
+    
+    # Calcul CBM
+    cbm_unitaire = (longueur_cm * largeur_cm * hauteur_cm) / 1_000_000
+    cbm_total = cbm_unitaire * nb_cartons
+    
+    st.markdown("---")
+    m1, m2 = st.columns(2)
+    m1.metric("Volume par Carton", f"{cbm_unitaire:.4f} CBM (m³)")
+    m2.metric("Volume Total de la Cargaison", f"{cbm_total:.2f} CBM (m³)")
+    
+    # Estimation conteneur
+    if cbm_total <= 28:
+        st.success("💡 Suggestion logistique : Votre volume tient parfaitement dans un **Conteneur 20 pieds (20' Dry)** ou en mode Groupage LCL.")
+    elif cbm_total <= 58:
+        st.success("💡 Suggestion logistique : Votre volume correspond à un **Conteneur 40 pieds (40' Dry)**.")
+    else:
+        st.warning("⚠️ Volume important : Nécessite un **Conteneur 40 High Cube (40' HC)** ou plusieurs conteneurs.")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+elif selected_tab == "💳 Paiements Fournisseurs":
+    st.markdown('<div class="custom-card">', unsafe_allow_html=True)
+    st.subheader("💳 Suivi & Gestion des Paiements Fournisseurs en Chine")
+    
+    with st.form("form_paiement"):
+        f_nom = st.text_input("Nom de l'usine / Fournisseur (ex: Yiwu Electronics)")
+        f_montant = st.number_input("Montant en Devise (Yuan/USD)", value=10000.0, step=500.0)
+        f_devise = st.selectbox("Devise", ["CNY", "USD", "EUR"])
+        f_taux = st.number_input("Taux de change appliqué (vers FCFA)", value=85.0 if f_devise == "CNY" else 610.0, step=0.1)
+        
+        montant_total_xof = f_montant * f_taux
+        st.write(f"**Équivalent calculé :** `{montant_total_xof:,.0f} FCFA`")
+        
+        if st.form_submit_button("Enregistrer le règlement", type="primary"):
+            if f_nom:
+                with db_connection() as conn:
+                    conn.execute(
+                        "INSERT INTO paiements_fournisseurs (date, fournisseur, montant_devise, devise, taux_applique, montant_xof, statut_paiement) VALUES (?, ?, ?, ?, ?, ?, 'Payé')",
+                        (datetime.now().strftime("%Y-%m-%d"), f_nom, f_montant, f_devise, f_taux, montant_total_xof)
+                    )
+                st.success("Paiement enregistré et tracé dans le grand livre !")
+                st.rerun()
+                
+    st.markdown("---")
+    st.markdown("### 📋 Historique des règlements usines")
+    df_p = get_paiements()
+    if not df_p.empty:
+        st.dataframe(df_p, use_container_width=True)
+    else:
+        st.info("Aucun paiement enregistré pour l'instant.")
     st.markdown("</div>", unsafe_allow_html=True)
 
 elif selected_tab == "🚨 Surestaries":
