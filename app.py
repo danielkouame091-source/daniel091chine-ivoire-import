@@ -1,7 +1,7 @@
 """
 app.py — Kelanewin Transit SYDAM Pro Ultra
 Système intégré de gestion douanière pour l'importation Chine → Côte d'Ivoire.
-Architecture Enterprise Grade — Version 4.1 (Optimisée & Sécurisée)
+Architecture Enterprise Grade — Version 4.2 (Intégrale, Parfaite & Corrigée)
 """
 
 import base64
@@ -591,7 +591,7 @@ if st.sidebar.button("🚪 Se déconnecter", use_container_width=True):
 
 st.markdown("""
 <div class="header-banner">
-  <h1>📦 KELANEWIN TRANSIT · ENTERPRISE SUITE v4.1</h1>
+  <h1>📦 KELANEWIN TRANSIT · ENTERPRISE SUITE v4.2</h1>
   <p>Système Intégré de Gestion Douanière — Importation Chine & International → Côte d'Ivoire (SYDAM Pro)</p>
 </div>
 """, unsafe_allow_html=True)
@@ -840,7 +840,6 @@ with tab_map:
     > * **ETA Port d'Abidjan :** Dans 14 jours  
     """)
 
-    # Affichage d'une carte interactive Streamlit avec les points clés
     map_data = pd.DataFrame({
         "lat": [31.2304, 1.2921, 12.8628, 5.3600],
         "lon": [121.4737, 103.8198, 45.0340, -4.0083],
@@ -897,7 +896,6 @@ with tab_crm:
                         st.success("Dossier mis à jour avec succès !")
                         st.rerun()
 
-        # Export Excel
         st.markdown("---")
         excel_bytes = export_excel(df_d)
         st.download_button(
