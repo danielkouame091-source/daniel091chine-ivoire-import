@@ -1,6 +1,6 @@
 """
-app.py — Kelanewin Transit SYDAM Pro Ultra (Edition iOS SpringBoard 3D)
-Système intégré de gestion douanière — Expérience Visuelle Immersive type iPhone.
+app.py — Kelanewin Transit SYDAM Pro Ultra (iOS SpringBoard 3D Edition)
+Système Intégré d'Import-Export Chine → Côte d'Ivoire
 """
 
 import base64
@@ -123,6 +123,14 @@ def init_db() -> None:
             observation             TEXT
         );
 
+        CREATE TABLE IF NOT EXISTS fournisseurs_chine (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            nom_usine   TEXT NOT NULL,
+            ville       TEXT NOT NULL,
+            contact     TEXT,
+            produits    TEXT
+        );
+
         CREATE TABLE IF NOT EXISTS users (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
             username        TEXT UNIQUE NOT NULL,
@@ -142,7 +150,6 @@ def init_db() -> None:
 
         default_articles = [
             ("Station Totale Topographique & GNSS/GPS", "9015.80.00", 5.0,  "Topographie"),
-            ("Théodolites, Niveaux Optiques & Laser",    "9015.10.00", 5.0,  "Topographie"),
             ("Smartphones, iPhones & Téléphones portables","8517.13.00",20.0,"High-Tech"),
             ("Ordinateurs Portables, MacBooks & Tablettes","8471.30.00", 5.0,"Informatique"),
             ("Panneaux Photovoltaïques / Solaires",        "8541.43.00", 5.0, "Énergie"),
@@ -151,8 +158,6 @@ def init_db() -> None:
             ("Motos & Motocycles (125cc - 250cc)",         "8711.20.00", 20.0,"Transport (Deux-roues)"),
             ("Voitures de Tourisme (Berlines / SUV)",      "8703.22.00", 20.0,"Transport (Véhicules)"),
             ("Vêtements Homme (Pantalons, Chemises)",      "6203.00.00", 20.0,"Textile"),
-            ("Vêtements Femme (Robes, Jupes)",             "6204.00.00", 20.0,"Textile"),
-            ("Vêtements Bébés & Enfants",                  "6209.00.00", 20.0,"Textile"),
             ("Sacs à main pour Dames",                     "4202.22.00", 20.0,"Maroquinerie"),
         ]
         conn.executemany(
@@ -249,30 +254,12 @@ def update_dossier(
         )
 
 
-def delete_dossier(dossier_id: int) -> None:
-    with db_connection() as conn:
-        conn.execute("DELETE FROM dossiers WHERE id=?", (dossier_id,))
-
-
 def add_article(nom, sh, dd, categorie) -> None:
     with db_connection() as conn:
         conn.execute(
             "INSERT INTO articles (nom, sh, dd, categorie) VALUES (?,?,?,?)",
             (nom.strip(), sh.strip(), dd, categorie.strip() or "Autre"),
         )
-
-
-def update_article(article_id, nom, sh, dd, categorie) -> None:
-    with db_connection() as conn:
-        conn.execute(
-            "UPDATE articles SET nom=?, sh=?, dd=?, categorie=? WHERE id=?",
-            (nom, sh, dd, categorie, article_id),
-        )
-
-
-def delete_article(article_id: int) -> None:
-    with db_connection() as conn:
-        conn.execute("DELETE FROM articles WHERE id=?", (article_id,))
 
 
 def create_user(username, password, role) -> None:
@@ -282,7 +269,7 @@ def create_user(username, password, role) -> None:
             (username, hash_password(password), role),
         )
 
-# ─── TAUX DE CHANGE EN TEMPS RÉEL ──────────────────────────────────────────────
+# ─── TAUX DE CHANGE ────────────────────────────────────────────────────────────
 
 @st.cache_data(ttl=3600)
 def fetch_rates() -> tuple[dict, str]:
@@ -304,7 +291,7 @@ def fetch_rates() -> tuple[dict, str]:
         pass
     return defaults, "⚠️ Mode secours (Hors ligne)"
 
-# ─── MOTEUR DE CALCUL DOUANIER SYDAM ────────────────────────────────────────────
+# ─── MOTEUR DE CALCUL DOUANIER UEMOA ───────────────────────────────────────────
 
 def calculer_droits_douane(caf_xof: float, dd_pct: float, regime_code: str) -> tuple[float, str]:
     if "C100" in regime_code:
@@ -325,10 +312,6 @@ def calculer_droits_douane(caf_xof: float, dd_pct: float, regime_code: str) -> t
         droits = caf_xof * 0.010
         total = droits
         details = f"Admission Temporaire — Taxe AT: {droits:,.0f} FCFA"
-    elif "TR" in regime_code:
-        droits = caf_xof * 0.005
-        total = droits
-        details = f"Transit/Réexportation — Redevance: {droits:,.0f} FCFA"
     else:
         tdd = dd_pct / 100.0
         droits = caf_xof * (tdd + 0.02)
@@ -337,7 +320,7 @@ def calculer_droits_douane(caf_xof: float, dd_pct: float, regime_code: str) -> t
         details = f"Régime standard — Total: {total:,.0f} FCFA"
     return total, details
 
-# ─── GÉNÉRATEUR DE DEVIS PDF PROFESSIONNEL ──────────────────────────────────────
+# ─── GÉNÉRATEUR DE DEVIS PDF ───────────────────────────────────────────────────
 
 def build_pdf(
     client, article_nom, item_info, regime_code, quantite,
@@ -419,7 +402,7 @@ def build_pdf(
     doc.build(elems)
     return fname
 
-# ─── INTÉGRATION IA GROQ ───────────────────────────────────────────────────────
+# ─── ASSISTANT IA GROQ ─────────────────────────────────────────────────────────
 
 def ask_ai(api_key: str, question: str, context: str) -> tuple[str | None, list[str]]:
     if not Groq or not api_key:
@@ -427,17 +410,16 @@ def ask_ai(api_key: str, question: str, context: str) -> tuple[str | None, list[
     client = Groq(api_key=api_key)
     system_prompt = (
         "Tu es l'assistant expert en douane, transit et logistique portuaire de Kelanewin Transit en Côte d'Ivoire. "
-        "Maîtrise parfaite du SYDAM, du Tarif Douanier UEMOA et des procédures portuaires d'Abidjan. "
-        "Réponds en français, de façon précise, technique et opérationnelle."
+        "Maîtrise parfaite du SYDAM, du Tarif Douanier UEMOA et des procédures portuaires d'Abidjan."
     )
     errors: list[str] = []
-    for model in ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"]:
+    for model in ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]:
         try:
             res = client.chat.completions.create(
                 model=model,
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"Contexte opérationnel: {context}\n\nQuestion: {question}"},
+                    {"role": "user", "content": f"Contexte: {context}\n\nQuestion: {question}"},
                 ],
                 temperature=0.2,
                 max_tokens=1200,
@@ -455,17 +437,17 @@ def export_excel(df: pd.DataFrame) -> bytes:
         df.to_excel(writer, index=False, sheet_name="Dossiers_Transit")
     return buf.getvalue()
 
-# ─── CONFIGURATION DE LA PAGE & DESIGN SPRINGBOARD 3D iOS ──────────────────────
+# ─── DESIGN iOS SPRINGBOARD 3D & CONFIGURATION PAGE ──────────────────────────────
 
 st.set_page_config(
-    page_title="Kelanewin Transit — iOS SpringBoard 3D",
+    page_title="Kelanewin Transit — Chine/Côte d'Ivoire",
     page_icon="🇨🇮",
     layout="wide",
 )
 
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=SF+Pro+Display:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 
 html, body, [class*="css"] {
     font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -477,7 +459,6 @@ html, body, [class*="css"] {
     background-attachment: fixed;
 }
 
-/* En-tête effet verre 3D iOS */
 .header-banner {
     background: linear-gradient(135deg, rgba(6, 95, 70, 0.9) 0%, rgba(5, 150, 105, 0.9) 50%, rgba(2, 132, 199, 0.9) 100%);
     padding: 35px 40px;
@@ -489,21 +470,6 @@ html, body, [class*="css"] {
     backdrop-filter: blur(25px);
 }
 
-.header-banner h1 {
-    font-weight: 800;
-    font-size: 2.2rem;
-    letter-spacing: -0.03em;
-    margin-bottom: 10px;
-    text-shadow: 0 2px 6px rgba(0,0,0,0.4);
-}
-
-.header-banner p {
-    font-size: 1.1rem;
-    opacity: 0.92;
-    font-weight: 500;
-}
-
-/* Grille de menu type SpringBoard iOS 3D */
 .springboard-container {
     background: rgba(15, 23, 42, 0.65);
     border-radius: 24px;
@@ -514,14 +480,13 @@ html, body, [class*="css"] {
     margin-bottom: 25px;
 }
 
-/* Cartes Neumorphisme / Glassmorphism 3D */
 .custom-card {
     background: rgba(17, 24, 39, 0.8);
     border-radius: 24px;
     padding: 32px;
     border: 1px solid rgba(255, 255, 255, 0.08);
     margin-bottom: 30px;
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.9);
     backdrop-filter: blur(20px);
 }
 
@@ -532,48 +497,27 @@ html, body, [class*="css"] {
     border: 1px solid rgba(255, 255, 255, 0.12);
     box-shadow: inset 0 1px 2px rgba(255,255,255,0.1), 0 15px 35px -10px rgba(0,0,0,0.6);
     text-align: center;
-    backdrop-filter: blur(12px);
 }
 
-.kpi-title {
-    font-size: 0.85rem;
-    color: #94A3B8;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    font-weight: 700;
-    margin-bottom: 8px;
-}
+.kpi-title { font-size: 0.85rem; color: #94A3B8; text-transform: uppercase; font-weight: 700; margin-bottom: 8px; }
+.kpi-value { font-size: 1.7rem; font-weight: 800; color: #38BDF8; }
 
-.kpi-value {
-    font-size: 1.7rem;
-    font-weight: 800;
-    color: #38BDF8;
-    text-shadow: 0 2px 10px rgba(56, 189, 248, 0.3);
-}
-
-.alert-green { background: rgba(6, 78, 59, 0.85); border-left: 6px solid #10B981; padding: 16px; border-radius: 14px; margin-bottom: 15px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5); }
-.alert-yellow { background: rgba(120, 53, 15, 0.85); border-left: 6px solid #F59E0B; padding: 16px; border-radius: 14px; margin-bottom: 15px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5); }
-.alert-red { background: rgba(127, 29, 29, 0.85); border-left: 6px solid #EF4444; padding: 16px; border-radius: 14px; margin-bottom: 15px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5); }
+.alert-green { background: rgba(6, 78, 59, 0.85); border-left: 6px solid #10B981; padding: 16px; border-radius: 14px; margin-bottom: 15px; }
+.alert-red { background: rgba(127, 29, 29, 0.85); border-left: 6px solid #EF4444; padding: 16px; border-radius: 14px; margin-bottom: 15px; }
 
 div[data-testid="stButton"] > button {
     border-radius: 16px !important;
     font-weight: 700 !important;
-    letter-spacing: 0.02em;
     padding: 0.65rem 1.4rem;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    transition: all 0.3s ease !important;
     box-shadow: 0 6px 15px rgba(0, 0, 0, 0.4);
-}
-
-div[data-testid="stButton"] > button:hover {
-    transform: translateY(-3px) scale(1.02);
-    box-shadow: 0 10px 25px rgba(56, 189, 248, 0.45);
 }
 
 #MainMenu, footer { visibility: hidden; }
 </style>
 """, unsafe_allow_html=True)
 
-# ─── GESTION DE LA SESSION ─────────────────────────────────────────────────────
+# ─── GESTION SESSION & AUTH ────────────────────────────────────────────────────
 
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
@@ -582,8 +526,6 @@ if "authenticated" not in st.session_state:
 
 if "groq_api_key" not in st.session_state:
     st.session_state.groq_api_key = setting("GROQ_API_KEY", "")
-
-# ─── ÉCRAN D'AUTHENTIFICATION ──────────────────────────────────────────────────
 
 if not st.session_state.authenticated:
     st.markdown("<br><br>", unsafe_allow_html=True)
@@ -599,7 +541,7 @@ if not st.session_state.authenticated:
             if user is None:
                 st.error("Utilisateur introuvable.")
             elif user["statut"] != "Actif":
-                st.error("Ce compte a été désactivé par l'administrateur.")
+                st.error("Ce compte a été désactivé.")
             elif hash_password(p_input) == user["password_hash"]:
                 st.session_state.authenticated = True
                 st.session_state.username = user["username"]
@@ -608,24 +550,20 @@ if not st.session_state.authenticated:
                 st.rerun()
             else:
                 st.error("Mot de passe incorrect.")
-        st.caption("Accès par défaut : admin / transit2026 | commercial / compta2026 | comptable / finance2026")
+        st.caption("Accès par défaut : admin / transit2026")
         st.markdown("</div>", unsafe_allow_html=True)
     st.stop()
 
-# ─── TAUX DE CHANGE ────────────────────────────────────────────────────────────
-
 taux_devises, status_api = fetch_rates()
 
-# ─── BARRE LATÉRALE (SIDEBAR) ──────────────────────────────────────────────────
+# ─── SIDEBAR ───────────────────────────────────────────────────────────────────
 
 st.sidebar.title("🇨🇮 KELANEWIN TRANSIT")
 st.sidebar.markdown(f"**Utilisateur :** `{st.session_state.username}`")
 st.sidebar.markdown(f"**Rôle :** `{st.session_state.user_role}`")
 st.sidebar.markdown("---")
 
-groq_key_input = st.sidebar.text_input(
-    "🔑 Clé API Groq", value=st.session_state.groq_api_key, type="password"
-)
+groq_key_input = st.sidebar.text_input("🔑 Clé API Groq", value=st.session_state.groq_api_key, type="password")
 if groq_key_input != st.session_state.groq_api_key:
     st.session_state.groq_api_key = groq_key_input
 
@@ -633,17 +571,7 @@ st.sidebar.subheader("💱 Taux de change (FCFA)")
 st.sidebar.caption(status_api)
 taux_cny = st.sidebar.number_input("1 CNY →", value=taux_devises["CNY"], step=0.1, format="%.2f")
 taux_usd = st.sidebar.number_input("1 USD →", value=taux_devises["USD"], step=1.0, format="%.2f")
-taux_eur = st.sidebar.number_input("1 EUR →", value=taux_devises["EUR"], step=0.1, format="%.3f")
-taux_aed = st.sidebar.number_input("1 AED →", value=taux_devises["AED"], step=0.5, format="%.2f")
-
-TAUX_MAP = {"CNY": taux_cny, "USD": taux_usd, "EUR": taux_eur, "AED": taux_aed}
-
-st.sidebar.subheader("⚙️ SMTP Email")
-smtp_server   = setting("SMTP_SERVER",   "smtp.gmail.com") or st.sidebar.text_input("Serveur SMTP", "smtp.gmail.com")
-_smtp_port_str = setting("SMTP_PORT", "")
-smtp_port = int(_smtp_port_str) if _smtp_port_str.isdigit() else int(st.sidebar.number_input("Port SMTP", value=587, step=1))
-smtp_sender   = setting("SMTP_USERNAME", "") or st.sidebar.text_input("Expéditeur email", "")
-smtp_password = setting("SMTP_PASSWORD", "") or st.sidebar.text_input("Mot de passe app", type="password")
+TAUX_MAP = {"CNY": taux_cny, "USD": taux_usd, "EUR": 655.957, "AED": 166.0}
 
 st.sidebar.markdown("---")
 if st.sidebar.button("🚪 Se déconnecter", use_container_width=True):
@@ -651,27 +579,25 @@ if st.sidebar.button("🚪 Se déconnecter", use_container_width=True):
     st.session_state.authenticated = False
     st.rerun()
 
-# ─── EN-TÊTE PRINCIPAL ─────────────────────────────────────────────────────────
+# ─── EN-TÊTE & MENU SPRINGBOARD ───────────────────────────────────────────────
 
 st.markdown("""
 <div class="header-banner">
-  <h1>📦 KELANEWIN TRANSIT · iOS SPRINGBOARD 3D</h1>
-  <p>Système Intégré de Gestion Douanière — Importation Chine & International → Côte d'Ivoire (SYDAM Pro)</p>
+  <h1>📦 KELANEWIN TRANSIT · CHINE ➔ CÔTE D'IVOIRE</h1>
+  <p>Plateforme Intégrée d'Import-Export & Gestion Douanière (SYDAM Pro Ultra)</p>
 </div>
 """, unsafe_allow_html=True)
-
-# ─── MENU NAVIGATION STYLE iOS SPRINGBOARD 3D (LIGNES HAUT EN BAS DE TYPE iPhone) ───
 
 st.markdown('<div class="springboard-container">', unsafe_allow_html=True)
 st.markdown("### 📱 Menu d'Application Principal (iOS Style Grid)")
 
 menu_options = [
     "📈 Dashboard",
-    "📄 Cotation & OCR",
+    "📄 Cotation & Douane",
     "🚨 Surestaries",
-    "🗺️ Tracking",
+    "🗺️ Tracking Chine-Abidjan",
     "📂 CRM & Dossiers",
-    "📖 Code Douanes",
+    "🇨🇳 Fournisseurs Chine",
     "🤖 Assistant IA",
     "📚 Base SH",
 ]
@@ -679,7 +605,6 @@ is_admin = st.session_state.user_role == "Administrateur"
 if is_admin:
     menu_options.append("🔐 Admin & Audit")
 
-# Organisation en colonnes multiples pour créer l'effet de grille d'applications iPhone
 cols = st.columns(3)
 if "selected_app" not in st.session_state:
     st.session_state.selected_app = "📈 Dashboard"
@@ -696,7 +621,7 @@ st.markdown('</div>', unsafe_allow_html=True)
 selected_tab = st.session_state.selected_app
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# ROUTAGE DES MODULES (ÉCRANS iOS)
+# ROUTAGE DES MODULES
 # ═══════════════════════════════════════════════════════════════════════════════
 
 if selected_tab == "📈 Dashboard":
@@ -704,7 +629,7 @@ if selected_tab == "📈 Dashboard":
     st.subheader("📈 Performance Financière & Opérationnelle")
     df_d = get_dossiers()
     if df_d.empty:
-        st.info("Aucun dossier enregistré. Créez votre premier dossier dans le module Cotation & OCR.")
+        st.info("Aucun dossier enregistré. Créez votre premier dossier dans Cotation & Douane.")
     else:
         tot_ca    = df_d["total_facture"].sum()
         tot_solde  = df_d["solde_du"].sum()
@@ -730,47 +655,36 @@ if selected_tab == "📈 Dashboard":
             st.markdown("<br/>", unsafe_allow_html=True)
             g1, g2 = st.columns(2)
             with g1:
-                fig = px.pie(
-                    df_d, names="statut", title="Répartition par Statut Opérationnel", hole=0.4,
-                    color_discrete_sequence=px.colors.qualitative.Set2,
-                )
+                fig = px.pie(df_d, names="statut", title="Répartition par Statut Opérationnel", hole=0.4)
                 fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
                 st.plotly_chart(fig, use_container_width=True)
             with g2:
-                fig2 = px.bar(
-                    df_d, x="article", y="total_facture", color="regime",
-                    title="Facturation par Article & Régime Douanier", barmode="group",
-                )
+                fig2 = px.bar(df_d, x="article", y="total_facture", color="regime", title="Facturation par Article & Régime")
                 fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
                 st.plotly_chart(fig2, use_container_width=True)
         else:
             st.dataframe(df_d[["date", "client", "article", "total_facture", "statut"]], use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
-elif selected_tab == "📄 Cotation & OCR":
+elif selected_tab == "📄 Cotation & Douane":
     df_articles = get_articles()
     st.markdown('<div class="custom-card">', unsafe_allow_html=True)
-    st.subheader("📄 Simulateur de Cotation & Facturation Pro")
-    st.caption("Calcul instantané des droits de douane UEMOA (SYDAM) & Frais Portuaires Abidjan")
-
+    st.subheader("📄 Simulateur de Cotation & Facturation Pro (Chine ➔ Abidjan)")
+    
     col_s1, col_s2 = st.columns(2)
     with col_s1:
         client_nom = st.text_input("Nom du Client / Entreprise", "SARL Global Trade CI")
-        email_cl = st.text_input("Email Client (pour envoi devis PDF)", "client@globaltrade.ci")
-        tel_cl = st.text_input("Téléphone Client", "+225 07 12 34 56 78")
-        
+        email_cl = st.text_input("Email Client", "client@globaltrade.ci")
         article_choisi = st.selectbox("Article / Marchandise", df_articles["nom"].tolist())
         item_row = df_articles[df_articles["nom"] == article_choisi].iloc[0]
-        
         regime_choisi = st.selectbox("Régime Douanier", REGIMES)
         
     with col_s2:
-        devise_achat = st.selectbox("Devise d'achat fournisseur", ["CNY", "USD", "EUR", "AED"], index=0)
-        montant_devise = st.number_input("Montant de la facture fournisseur (Devise)", value=50000.0, step=1000.0)
+        devise_achat = st.selectbox("Devise d'achat fournisseur", ["CNY", "USD", "EUR"], index=0)
+        montant_devise = st.number_input("Facture Fournisseur (Devise)", value=50000.0, step=1000.0)
         quantite_art = st.number_input("Quantité d'unités", value=100, step=1)
-        
         fret_devise = st.number_input("Fret international (Devise)", value=3000.0, step=100.0)
-        assurance_devise = st.number_input("Assurance maritime (Devise)", value=500.0, step=50.0)
+        assurance_devise = st.number_input("Assurance maritime (Devise)", value=500.0, step=100.0)
 
     taux_actuel = TAUX_MAP.get(devise_achat, 85.0)
     fob_xof = montant_devise * taux_actuel
@@ -790,17 +704,11 @@ elif selected_tab == "📄 Cotation & OCR":
     total_facture = caf_xof + total_douane + total_transit + post_acheminement
 
     st.markdown("---")
-    st.subheader("💰 Synthèse Financière de la Cotation")
     rc1, rc2, rc3, rc4 = st.columns(4)
     rc1.metric("Valeur FOB (FCFA)", f"{fob_xof:,.0f}")
     rc2.metric("Valeur CAF (FCFA)", f"{caf_xof:,.0f}")
     rc3.metric("Droits & Taxes", f"{total_douane:,.0f} FCFA")
     rc4.metric("TOTAL GÉNÉRAL", f"{total_facture:,.0f} FCFA")
-
-    with st.expander("🔍 Voir le détail des calculs douaniers"):
-        st.write(f"**Code SH :** `{item_row['sh']}` | **Droit de Douane (DD) :** `{dd_taux}%`")
-        st.write(f"**Détails imposition :** {details_douane}")
-        st.write(f"**Frais Transit & Port :** {total_transit:,.0f} FCFA (Port: {frais_port:,.0f} | GUCE: {frais_guce:,.0f} | Honoraires: {honoraires:,.0f})")
 
     acompte_verse = st.number_input("Acompte versé par le client (FCFA)", value=total_facture * 0.5, step=50000.0)
     solde_restant = total_facture - acompte_verse
@@ -809,65 +717,33 @@ elif selected_tab == "📄 Cotation & OCR":
     with col_btn1:
         if st.button("📄 Générer le Devis PDF Pro", use_container_width=True, type="primary"):
             pdf_path = build_pdf(
-                client=client_nom,
-                article_nom=article_choisi,
-                item_info=item_row,
-                regime_code=regime_choisi,
-                quantite=quantite_art,
-                fob_xof=fob_xof,
-                fret_xof=fret_xof,
-                assurance_xof=assurance_xof,
-                caf_xof=caf_xof,
-                total_douane=total_douane,
-                total_transit=total_transit,
-                post_ach=post_acheminement,
-                total_facture=total_facture,
-                acompte=acompte_verse,
-                solde_du=solde_restant,
+                client=client_nom, article_nom=article_choisi, item_info=item_row,
+                regime_code=regime_choisi, quantite=quantite_art, fob_xof=fob_xof,
+                fret_xof=fret_xof, assurance_xof=assurance_xof, caf_xof=caf_xof,
+                total_douane=total_douane, total_transit=total_transit, post_ach=post_acheminement,
+                total_facture=total_facture, acompte=acompte_verse, solde_du=solde_restant
             )
-            with open(pdf_path, "rb") as pdf_file:
-                st.download_button(
-                    label="📥 Télécharger le Devis PDF",
-                    data=pdf_file.read(),
-                    file_name=pdf_path.name,
-                    mime="application/pdf",
-                    use_container_width=True,
-                )
-            st.success("Devis PDF généré avec succès !")
+            with open(pdf_path, "rb") as f:
+                st.download_button("📥 Télécharger Devis PDF", f.read(), file_name=pdf_path.name, mime="application/pdf", use_container_width=True)
 
     with col_btn2:
-        if st.button("💾 Enregistrer dans le CRM / Dossiers", use_container_width=True):
+        if st.button("💾 Enregistrer dans le CRM", use_container_width=True):
             add_dossier(
-                client=client_nom,
-                article=article_choisi,
-                regime=regime_choisi,
-                fob=fob_xof,
-                total=total_facture,
-                solde=solde_restant,
-                statut="En cours",
-                bl="",
-                container="",
-                date_arrivee=(datetime.now() + timedelta(days=25)).strftime("%Y-%m-%d"),
-                franchise=14,
-                frais_surest=25000.0,
-                email=email_cl,
-                telephone=tel_cl,
-                devise=devise_achat,
-                observation=f"Cotation auto - {quantite_art} unités",
+                client=client_nom, article=article_choisi, regime=regime_choisi,
+                fob=fob_xof, total=total_facture, solde=solde_restant, statut="En cours",
+                bl="", container="", date_arrivee=(datetime.now() + timedelta(days=25)).strftime("%Y-%m-%d"),
+                franchise=14, frais_surest=25000.0, email=email_cl, telephone="+225 07000000",
+                devise=devise_achat, observation=f"Import Chine - {quantite_art} unités"
             )
-            add_audit(st.session_state.username, "creation_dossier", f"Dossier créé pour {client_nom}")
-            st.success("Dossier enregistré dans la base de données avec succès !")
-
+            st.success("Dossier enregistré avec succès !")
     st.markdown("</div>", unsafe_allow_html=True)
 
 elif selected_tab == "🚨 Surestaries":
     st.markdown('<div class="custom-card">', unsafe_allow_html=True)
-    st.subheader("🚨 Simulateur & Suivi des Surestaries Conteneurs")
-    st.caption("Évitez les pénalités d'immobilisation des conteneurs au Port d'Abidjan (PAO)")
-
+    st.subheader("🚨 Suivi des Surestaries Conteneurs (Port d'Abidjan)")
     df_d = get_dossiers()
     if df_d.empty:
-        st.info("Aucun dossier actif pour calculer les surestaries.")
+        st.info("Aucun dossier actif.")
     else:
         for idx, row in df_d.iterrows():
             if row["date_arrivee"]:
@@ -876,195 +752,82 @@ elif selected_tab == "🚨 Surestaries":
                     jours_ecoules = (datetime.now() - d_arr).days
                     franchise = int(row["jours_franchise"] or 14)
                     coût_jour = float(row["frais_surestarie_jour"] or 25000)
-                    
                     jours_retard = max(0, jours_ecoules - franchise)
-                    montant_surestarie = jours_retard * coût_jour
-
-                    with st.expander(f"📦 Dossier #{row['id']} — Client : {row['client']} | Conteneur : {row['container_number'] or 'Non assigné'}"):
-                        c1, c2, c3 = st.columns(3)
-                        c1.metric("Date d'arrivée", row["date_arrivee"])
-                        c2.metric("Jours de franchise", f"{franchise} jours")
-                        c3.metric("Surestaries estimées", f"{montant_surestarie:,.0f} FCFA", delta=f"{jours_retard} jours de retard", delta_color="inverse")
-                        
+                    montant = jours_retard * coût_jour
+                    with st.expander(f"📦 Dossier #{row['id']} — Client : {row['client']}"):
                         if jours_retard > 0:
-                            st.markdown(f'<div class="alert-red"><b>ALERTE SURESTARIES :</b> Ce conteneur dépasse la franchise de {jours_retard} jours ! Pénalité active : {montant_surestarie:,.0f} FCFA.</div>', unsafe_allow_html=True)
+                            st.markdown(f'<div class="alert-red"><b>Pénalité active :</b> {montant:,.0f} FCFA ({jours_retard} jours de retard).</div>', unsafe_allow_html=True)
                         else:
-                            st.markdown(f'<div class="alert-green"><b>Dans les délais :</b> Il reste {franchise - jours_ecoules} jours avant application des pénalités.</div>', unsafe_allow_html=True)
+                            st.markdown(f'<div class="alert-green"><b>Dans les délais :</b> Reste {franchise - jours_ecoules} jours de franchise.</div>', unsafe_allow_html=True)
                 except Exception:
                     pass
     st.markdown("</div>", unsafe_allow_html=True)
 
-elif selected_tab == "🗺️ Tracking":
+elif selected_tab == "🗺️ Tracking Chine-Abidjan":
     st.markdown('<div class="custom-card">', unsafe_allow_html=True)
-    st.subheader("🗺️ Tracking Maritime en Temps Réel (Route Chine → Abidjan)")
-    st.caption("Suivi des navires porte-conteneurs (Ligne Ningbo / Shanghai / Shenzhen → Port Autonome d'Abidjan)")
-
-    st.markdown("""
-    > 💡 **Information Navire (Démo interactive) :**  
-    > * **Navire :** MSC Jade / CMA CGM ULV (Ligne Asie-Afrique de l'Ouest)  
-    > * **Position actuelle :** Golfe d'Aden / Passage au large de Djibouti  
-    > * **ETA Port d'Abidjan :** Dans 14 jours  
-    """)
-
+    st.subheader("🗺️ Tracking Maritime en Temps Réel (Ningbo / Shanghai ➔ Abidjan)")
+    st.markdown("> * **Ligne :** Asie - Afrique de l'Ouest (MSC / CMA CGM)\n> * **ETA Port d'Abidjan :** Dans 14 jours")
     map_data = pd.DataFrame({
         "lat": [31.2304, 1.2921, 12.8628, 5.3600],
         "lon": [121.4737, 103.8198, 45.0340, -4.0083],
-        "lieu": ["Port de Shanghai (Chine)", "Singapour (Hub)", "Golfe d'Aden", "Port d'Abidjan (Côte d'Ivoire)"]
+        "lieu": ["Shanghai (Chine)", "Singapour (Hub)", "Golfe d'Aden", "Port d'Abidjan (CI)"]
     })
     st.map(map_data, zoom=2)
     st.markdown("</div>", unsafe_allow_html=True)
 
 elif selected_tab == "📂 CRM & Dossiers":
     st.markdown('<div class="custom-card">', unsafe_allow_html=True)
-    st.subheader("📂 Gestion CRM & Suivi des Dossiers de Transit")
-    
+    st.subheader("📂 Gestion CRM & Suivi des Dossiers")
     df_d = get_dossiers()
-    if df_d.empty:
-        st.info("Aucun dossier enregistré.")
-    else:
-        search_q = st.text_input("🔍 Rechercher un dossier (Client, Article, B/L, Conteneur)")
-        if search_q:
-            mask = df_d.apply(lambda row: row.astype(str).str.contains(search_q, case=False).any(), axis=1)
-            df_filtered = df_d[mask]
-        else:
-            df_filtered = df_d
-
-        st.dataframe(df_filtered[["id", "date", "client", "article", "regime", "total_facture", "solde_du", "statut", "bl_number", "container_number"]], use_container_width=True)
-
-        st.markdown("### ✏️ Mettre à jour un dossier")
-        dossier_ids = df_d["id"].tolist()
-        sel_id = st.selectbox("Sélectionner l'ID du dossier à modifier", dossier_ids)
-        
-        if sel_id:
-            d_row = df_d[df_d["id"] == sel_id].iloc[0]
-            with st.form("form_update_dossier"):
-                u_client = st.text_input("Client", value=d_row["client"])
-                u_article = st.text_input("Article", value=d_row["article"])
-                u_regime = st.selectbox("Régime", REGIMES, index=REGIMES.index(d_row["regime"]) if d_row["regime"] in REGIMES else 0)
-                u_solde = st.number_input("Solde dû (FCFA)", value=float(d_row["solde_du"]))
-                u_statut = st.selectbox("Statut", STATUTS, index=STATUTS.index(d_row["statut"]) if d_row["statut"] in STATUTS else 0)
-                u_bl = st.text_input("N° B/L (Connaissement)", value=d_row["bl_number"] or "")
-                u_cont = st.text_input("N° Conteneur", value=d_row["container_number"] or "")
-                u_arr = st.text_input("Date d'arrivée (AAAA-MM-JJ)", value=d_row["date_arrivee"] or "")
-                u_fran = st.number_input("Jours de franchise", value=int(d_row["jours_franchise"] or 14))
-                u_sur = st.number_input("Frais surestarie / jour (FCFA)", value=float(d_row["frais_surestarie_jour"] or 25000))
-                
-                submitted = st.form_submit_button("Mettre à jour le dossier", type="primary")
-                if submitted:
-                    if st.session_state.user_role == "Commercial / Déclarant" and u_statut == "Bon à Enlever (BAE) Émis":
-                        st.error("Action non autorisée : Seul un administrateur ou le service financier peut valider le BAE.")
-                    else:
-                        update_dossier(sel_id, u_client, u_article, u_regime, u_solde, u_statut, u_bl, u_cont, u_arr, u_fran, u_sur)
-                        add_audit(st.session_state.username, "update_dossier", f"Mise à jour dossier #{sel_id}")
-                        st.success("Dossier mis à jour avec succès !")
-                        st.rerun()
-
-        st.markdown("---")
+    if not df_d.empty:
+        st.dataframe(df_d[["id", "date", "client", "article", "total_facture", "solde_du", "statut"]], use_container_width=True)
         excel_bytes = export_excel(df_d)
-        st.download_button(
-            label="📊 Exporter tous les dossiers (Excel)",
-            data=excel_bytes,
-            file_name="Kelanewin_Dossiers_Transit.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
+        st.download_button("📊 Exporter les dossiers (Excel)", excel_bytes, "Kelanewin_Dossiers.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    else:
+        st.info("Aucun dossier.")
     st.markdown("</div>", unsafe_allow_html=True)
 
-elif selected_tab == "📖 Code Douanes":
+elif selected_tab == "🇨🇳 Fournisseurs Chine":
     st.markdown('<div class="custom-card">', unsafe_allow_html=True)
-    st.subheader("📖 Code des Douanes de Côte d'Ivoire & TEC UEMOA")
-    st.caption("Consultez la réglementation douanière, les régimes suspensifs et les taux applicables")
-
-    search_sh = st.text_input("🔍 Rechercher par Code SH ou Nom de marchandise")
-    df_art = get_articles()
-    if search_sh:
-        df_art = df_art[df_art.apply(lambda r: r.astype(str).str.contains(search_sh, case=False).any(), axis=1)]
-
-    st.dataframe(df_art[["nom", "sh", "dd", "categorie"]], use_container_width=True)
-
-    st.markdown("---")
-    st.markdown("### 🏛️ Notes sur les Régimes Douaniers en Côte d'Ivoire")
-    st.markdown("""
-    * **C100 (Mise à la consommation) :** Dédouanement définitif avec acquittement des Droits de Douane (DD), de la Redevance Statistique (RS), du Prélèvement Communautaire de Solidarité (PCS), du PUA et de la TVA (18%).
-    * **E100 (Entrepôt de douane) :** Régime suspensif permettant de stocker les marchandises en franchise de droits et taxes en attendant leur réexportation ou mise à la consommation ultérieure.
-    * **AT (Admission Temporaire) :** Pour les matériels professionnels (topographie, BTP, etc.) avec réexportation prévue sous 6 à 12 mois.
-    """)
+    st.subheader("🇨🇳 Annuaire & Suivi des Fournisseurs en Chine (Yiwu / Shenzhen)")
+    with st.form("form_fournisseur"):
+        f_nom = st.text_input("Nom de l'usine / Fournisseur")
+        f_ville = st.text_input("Ville en Chine (ex: Yiwu, Guangzhou)")
+        f_prod = st.text_input("Produits principaux")
+        if st.form_submit_button("Enregistrer le fournisseur", type="primary"):
+            if f_nom:
+                with db_connection() as conn:
+                    conn.execute("INSERT INTO fournisseurs_chine (nom_usine, ville, produits) VALUES (?, ?, ?)", (f_nom, f_ville, f_prod))
+                st.success("Fournisseur enregistré avec succès !")
+                st.rerun()
     st.markdown("</div>", unsafe_allow_html=True)
 
 elif selected_tab == "🤖 Assistant IA":
     st.markdown('<div class="custom-card">', unsafe_allow_html=True)
-    st.subheader("🤖 Assistant IA SYDAM & Réglementation Douanière")
-    st.caption("Posez vos questions sur les procédures douanières portuaires à Abidjan, le calcul des taxes ou les litiges SH.")
-
-    user_q = st.text_area("Votre question à l'expert IA :", placeholder="Ex: Quel est le taux de douane pour l'importation de smartphones en Côte d'Ivoire ?")
-    if st.button("Poser la question à l'IA", type="primary"):
-        if not st.session_state.groq_api_key:
-            st.error("Veuillez renseigner votre clé API Groq dans la barre latérale.")
-        elif not user_q:
-            st.warning("Veuillez saisir une question.")
-        else:
-            with st.spinner("Analyse par l'IA SYDAM..."):
-                ans, errs = ask_ai(st.session_state.groq_api_key, user_q, "Contexte: Importation Chine → Côte d'Ivoire, Port d'Abidjan.")
+    st.subheader("🤖 Assistant IA SYDAM & Douanes")
+    user_q = st.text_area("Posez votre question sur les procédures d'importation :")
+    if st.button("Interroger l'IA", type="primary"):
+        if st.session_state.groq_api_key and user_q:
+            with st.spinner("Analyse..."):
+                ans, errs = ask_ai(st.session_state.groq_api_key, user_q, "Importation Chine ➔ Côte d'Ivoire")
                 if ans:
-                    st.markdown("### 💡 Réponse de l'Expert IA")
                     st.markdown(ans)
                 else:
-                    st.error(f"Erreur lors de la consultation de l'IA : {errs}")
+                    st.error(f"Erreur : {errs}")
+        else:
+            st.warning("Veuillez renseigner votre clé API Groq dans la barre latérale et saisir une question.")
     st.markdown("</div>", unsafe_allow_html=True)
 
 elif selected_tab == "📚 Base SH":
     st.markdown('<div class="custom-card">', unsafe_allow_html=True)
-    st.subheader("📚 Gestion de la Base de Données SH & Articles")
-    
-    df_art = get_articles()
-    st.dataframe(df_art, use_container_width=True)
-
-    if is_admin:
-        st.markdown("### ➕ Ajouter un nouvel article douanier")
-        with st.form("form_add_art"):
-            n_nom = st.text_input("Nom de l'article")
-            n_sh = st.text_input("Code SH (ex: 8517.13.00)")
-            n_dd = st.number_input("Taux Droits de Douane (%)", value=20.0, step=1.0)
-            n_cat = st.text_input("Catégorie", "High-Tech")
-            
-            submitted_art = st.form_submit_button("Ajouter l'article", type="primary")
-            if submitted_art:
-                if n_nom and n_sh:
-                    add_article(n_nom, n_sh, n_dd, n_cat)
-                    add_audit(st.session_state.username, "add_article", f"Ajout article SH {n_sh}")
-                    st.success("Article ajouté avec succès !")
-                    st.rerun()
-                else:
-                    st.error("Veuillez remplir le nom et le code SH.")
+    st.subheader("📚 Base de Données des Codes SH & Tarifs Douaniers")
+    st.dataframe(get_articles(), use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
 elif selected_tab == "🔐 Admin & Audit" and is_admin:
     st.markdown('<div class="custom-card">', unsafe_allow_html=True)
-    st.subheader("🔐 Administration Système & Journaux d'Audit (RBAC)")
-    
-    st.markdown("### 👥 Gestion des Utilisateurs")
-    df_u = get_users()
-    st.dataframe(df_u, use_container_width=True)
-
-    st.markdown("### ➕ Créer un nouvel utilisateur")
-    with st.form("form_create_user"):
-        new_u = st.text_input("Nom d'utilisateur")
-        new_p = st.text_input("Mot de passe", type="password")
-        new_r = st.selectbox("Rôle", ROLES)
-        sub_u = st.form_submit_button("Créer le compte", type="primary")
-        if sub_u:
-            if new_u and new_p:
-                try:
-                    create_user(new_u, new_p, new_r)
-                    add_audit(st.session_state.username, "create_user", f"Création utilisateur {new_u}")
-                    st.success(f"Utilisateur {new_u} créé avec succès !")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Erreur : {e}")
-            else:
-                st.error("Veuillez remplir tous les champs.")
-
-    st.markdown("---")
-    st.markdown("### 📜 Journaux d'Audit & Sécurité (Audit Logs)")
-    df_logs = get_audit_logs(100)
-    st.dataframe(df_logs, use_container_width=True)
+    st.subheader("🔐 Administration & Journaux d'Audit")
+    st.dataframe(get_users(), use_container_width=True)
+    st.markdown("### Journaux d'Audit")
+    st.dataframe(get_audit_logs(50), use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
