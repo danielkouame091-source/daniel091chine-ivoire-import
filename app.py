@@ -68,11 +68,6 @@ def setting(name: str, default: str = "") -> str:
     return os.getenv(name, default)
 
 
-def hash_password(password: str) -> str:
-    salt = setting("APP_SALT", "KelanewinTransit2026SecureSalt")
-    return hashlib.sha256((password + salt).encode("utf-8")).hexdigest()
-
-
 def safe_filename(value: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", value).strip("._") or "document"
     return cleaned[:120]
@@ -138,14 +133,6 @@ def init_db() -> None:
             statut_paiement   TEXT NOT NULL DEFAULT 'Paid'
         );
 
-        CREATE TABLE IF NOT EXISTS users (
-            id             INTEGER PRIMARY KEY AUTOINCREMENT,
-            username       TEXT UNIQUE NOT NULL,
-            password_hash  TEXT NOT NULL,
-            role           TEXT NOT NULL,
-            statut         TEXT NOT NULL DEFAULT 'Active'
-        );
-
         CREATE TABLE IF NOT EXISTS audit_logs (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             created_at  TEXT NOT NULL,
@@ -170,16 +157,6 @@ def init_db() -> None:
         conn.executemany(
             "INSERT OR IGNORE INTO articles (nom, sh, dd, categorie) VALUES (?,?,?,?)",
             default_articles,
-        )
-
-        default_users = [
-            ("admin",      hash_password(setting("APP_ADMIN_PASSWORD",      "transit2026")),  "Administrator",           "Active"),
-            ("commercial", hash_password(setting("APP_COMMERCIAL_PASSWORD",  "compta2026")),  "Sales / Customs Broker",  "Active"),
-            ("comptable",  hash_password(setting("APP_COMPTABLE_PASSWORD",   "finance2026")), "Accounting / Treasury",   "Active"),
-        ]
-        conn.executemany(
-            "INSERT OR IGNORE INTO users (username, password_hash, role, statut) VALUES (?,?,?,?)",
-            default_users,
         )
 
 
@@ -215,21 +192,8 @@ def get_paiements() -> pd.DataFrame:
     return read_df("SELECT * FROM paiements_fournisseurs ORDER BY id DESC")
 
 
-def get_users() -> pd.DataFrame:
-    return read_df("SELECT id, username, role, statut FROM users ORDER BY id ASC")
-
-
 def get_audit_logs(limit: int = 200) -> pd.DataFrame:
     return read_df("SELECT * FROM audit_logs ORDER BY id DESC LIMIT ?", (limit,))
-
-
-def get_user(username: str):
-    with db_connection() as conn:
-        row = conn.execute(
-            "SELECT id, username, password_hash, role, statut FROM users WHERE username = ?",
-            (username,),
-        ).fetchone()
-    return dict(row) if row else None
 
 
 def add_dossier(
@@ -258,14 +222,6 @@ def add_article(nom, sh, dd, categorie) -> None:
         conn.execute(
             "INSERT INTO articles (nom, sh, dd, categorie) VALUES (?,?,?,?)",
             (nom.strip(), sh.strip(), dd, categorie.strip() or "Other"),
-        )
-
-
-def create_user(username, password, role) -> None:
-    with db_connection() as conn:
-        conn.execute(
-            "INSERT INTO users (username, password_hash, role, statut) VALUES (?,?,?,'Active')",
-            (username, hash_password(password), role),
         )
 
 # ─── EXCHANGE RATES (BASE INR) ─────────────────────────────────────────────────
@@ -517,50 +473,17 @@ div[data-testid="stButton"] > button {
 </style>
 """, unsafe_allow_html=True)
 
-# ─── SESSION & AUTHENTICATION ──────────────────────────────────────────────────
-
-if "authenticated" not in st.session_state:
-    st.session_state.authenticated = False
-    st.session_state.username = ""
-    st.session_state.user_role = ""
+# ─── INITIALIZATION & SESSION STATE (OPEN ACCESS) ──────────────────────────────
 
 if "groq_api_key" not in st.session_state:
     st.session_state.groq_api_key = setting("GROQ_API_KEY", "")
-
-if not st.session_state.authenticated:
-    st.markdown("<br><br>", unsafe_allow_html=True)
-    col_l, col_m, col_r = st.columns([1, 2, 1])
-    with col_m:
-        st.markdown('<div class="custom-card">', unsafe_allow_html=True)
-        st.subheader("🔐 Secure Sign In — Kelanewin Transit")
-        st.caption("Cryptographic Security · RBAC Access Control")
-        u_input = st.text_input("Username")
-        p_input = st.text_input("Password", type="password")
-        if st.button("Sign In", use_container_width=True, type="primary"):
-            user = get_user(u_input)
-            if user is None:
-                st.error("User not found.")
-            elif user["statut"] != "Active":
-                st.error("This account has been deactivated.")
-            elif hash_password(p_input) == user["password_hash"]:
-                st.session_state.authenticated = True
-                st.session_state.username = user["username"]
-                st.session_state.user_role = user["role"]
-                add_audit(user["username"], "login", "Successful login")
-                st.rerun()
-            else:
-                st.error("Incorrect password.")
-        st.caption("Default Admin Login: admin / transit2026")
-        st.markdown("</div>", unsafe_allow_html=True)
-    st.stop()
 
 exchange_rates, api_status = fetch_rates()
 
 # ─── SIDEBAR ───────────────────────────────────────────────────────────────────
 
 st.sidebar.title("🌐 KELANEWIN TRANSIT")
-st.sidebar.markdown(f"**User:** `{st.session_state.username}`")
-st.sidebar.markdown(f"**Role:** `{st.session_state.user_role}`")
+st.sidebar.markdown("**Mode:** `Open Access (Public Mode)`")
 st.sidebar.markdown("---")
 
 groq_key_input = st.sidebar.text_input("🔑 Groq API Key", value=st.session_state.groq_api_key, type="password")
@@ -572,12 +495,6 @@ st.sidebar.caption(api_status)
 rate_usd = st.sidebar.number_input("1 USD →", value=exchange_rates["USD"], step=1.0, format="%.2f")
 rate_cny = st.sidebar.number_input("1 CNY →", value=exchange_rates["CNY"], step=0.5, format="%.2f")
 RATE_MAP = {"USD": rate_usd, "CNY": rate_cny, "EUR": 90.0, "AED": 22.7}
-
-st.sidebar.markdown("---")
-if st.sidebar.button("🚪 Sign Out", use_container_width=True):
-    add_audit(st.session_state.username, "logout", "User signed out")
-    st.session_state.authenticated = False
-    st.rerun()
 
 # ─── HEADER & SPRINGBOARD MENU ─────────────────────────────────────────────────
 
@@ -602,10 +519,8 @@ menu_options = [
     "🇨🇳 Overseas Suppliers",
     "🤖 AI Customs Assistant",
     "📚 HS Code Database",
+    "🔐 Audit Logs",
 ]
-is_admin = st.session_state.user_role == "Administrator"
-if is_admin:
-    menu_options.append("🔐 Admin & Audit Logs")
 
 cols = st.columns(3)
 if "selected_app" not in st.session_state:
@@ -722,7 +637,7 @@ elif selected_tab == "📄 Quotation & Customs":
                 client=client_name, article_nom=article_selected, item_info=item_row,
                 regime_code=regime_selected, quantity=quantity_items, fob_inr=fob_inr,
                 freight_inr=freight_inr, insurance_inr=insurance_inr, cif_inr=cif_inr,
-                total_customs=total_customs, total_transit=total_transit, inland_ach=inland_haulage,
+                total_customs=total_customs, total_transit=total_transit, inland_haulage=inland_haulage,
                 total_invoice=total_invoice, advance_paid=advance_paid, balance_due=balance_due
             )
             with open(pdf_path, "rb") as f:
@@ -923,33 +838,12 @@ elif selected_tab == "📚 HS Code Database":
                 st.rerun()
     st.markdown("</div>", unsafe_allow_html=True)
 
-elif selected_tab == "🔐 Admin & Audit Logs" and is_admin:
+elif selected_tab == "🔐 Audit Logs":
     st.markdown('<div class="custom-card">', unsafe_allow_html=True)
-    st.subheader("🔐 System Administration & Audit Logs")
-    
-    tab_u, tab_a = st.tabs(["User Management", "Audit Logs"])
-    with tab_u:
-        st.markdown("### Registered Users")
-        st.dataframe(get_users(), use_container_width=True)
-        
-        with st.form("new_user_form"):
-            st.markdown("### Create New User")
-            new_user = st.text_input("Username")
-            new_pass = st.text_input("Password", type="password")
-            new_role = st.selectbox("Role", ROLES)
-            if st.form_submit_button("Create Account"):
-                try:
-                    create_user(new_user, new_pass, new_role)
-                    st.success(f"User {new_user} created successfully!")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error: {e}")
-                    
-    with tab_a:
-        st.markdown("### System Activity Audit Logs")
-        df_logs = get_audit_logs()
-        if not df_logs.empty:
-            st.dataframe(df_logs, use_container_width=True)
-        else:
-            st.info("No audit logs available.")
+    st.subheader("🔐 System Activity Audit Logs")
+    df_logs = get_audit_logs()
+    if not df_logs.empty:
+        st.dataframe(df_logs, use_container_width=True)
+    else:
+        st.info("No audit logs available.")
     st.markdown("</div>", unsafe_allow_html=True)
