@@ -1,6 +1,6 @@
 """
 app.py — Kelanewin Transit SYDAM Pro Ultra (iOS SpringBoard 3D Ultimate Edition)
-Système Intégré d'Import-Export Chine → Côte d'Ivoire
+Global Import-Export & Customs Management Platform (China → India / International)
 """
 
 import base64
@@ -9,11 +9,7 @@ import io
 import os
 import re
 import sqlite3
-import smtplib
 from datetime import datetime, timedelta
-from email.mime.application import MIMEApplication
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 from pathlib import Path
 from urllib.parse import quote
 
@@ -37,30 +33,30 @@ try:
 except ImportError:
     Groq = None
 
-# ─── CONFIGURATION & CHEMINS ───────────────────────────────────────────────────
+# ─── CONFIGURATION & PATHS ────────────────────────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "transit_enterprise.db"
 UPLOAD_DIR = BASE_DIR / "uploads_dossiers"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-STATUTS = [
-    "En cours",
-    "FDI & RFC Validées",
-    "Visite Douanière en Cours",
-    "Bon à Enlever (BAE) Émis",
-    "Livré au Client",
+STATUSES = [
+    "In Progress",
+    "FDI & Customs Cleared",
+    "Customs Inspection Underway",
+    "Out of Gate / Delivery Order Issued",
+    "Delivered to Client",
 ]
 
 REGIMES = [
-    "C100 - Mise à la consommation",
-    "E100 - Entrepôt de douane (Suspensif)",
-    "AT - Admission Temporaire",
-    "TR - Transit / Réexportation",
+    "C100 - Home Consumption (Duty Paid)",
+    "E100 - Customs Warehouse (Suspensive)",
+    "AT - Temporary Admission",
+    "TR - Transit / Re-export",
 ]
 
-ROLES = ["Administrateur", "Commercial / Déclarant", "Comptable / Trésorerie"]
+ROLES = ["Administrator", "Sales / Customs Broker", "Accounting / Treasury"]
 
-# ─── UTILITAIRES & SÉCURITÉ ────────────────────────────────────────────────────
+# ─── UTILITIES & SECURITY ──────────────────────────────────────────────────────
 
 def setting(name: str, default: str = "") -> str:
     try:
@@ -81,7 +77,7 @@ def safe_filename(value: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", value).strip("._") or "document"
     return cleaned[:120]
 
-# ─── BASE DE DONNÉES & MIGRATIONS ──────────────────────────────────────────────
+# ─── DATABASE & MIGRATIONS ─────────────────────────────────────────────────────
 
 def db_connection() -> sqlite3.Connection:
     conn = sqlite3.connect(str(DB_PATH), timeout=10.0)
@@ -94,60 +90,60 @@ def init_db() -> None:
     with db_connection() as conn:
         conn.executescript("""
         CREATE TABLE IF NOT EXISTS articles (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            nom         TEXT UNIQUE NOT NULL,
-            sh          TEXT NOT NULL,
-            dd          REAL NOT NULL,
-            categorie   TEXT NOT NULL
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            nom        TEXT UNIQUE NOT NULL,
+            sh         TEXT NOT NULL,
+            dd         REAL NOT NULL,
+            categorie  TEXT NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS dossiers (
-            id                      INTEGER PRIMARY KEY AUTOINCREMENT,
-            date                    TEXT NOT NULL,
-            client                  TEXT NOT NULL,
-            article                 TEXT NOT NULL,
-            regime                  TEXT NOT NULL DEFAULT 'C100 - Mise à la consommation',
-            fob_xof                 REAL NOT NULL DEFAULT 0,
-            total_facture           REAL NOT NULL DEFAULT 0,
-            solde_du                REAL NOT NULL DEFAULT 0,
-            statut                  TEXT NOT NULL DEFAULT 'En cours',
-            bl_number               TEXT,
-            container_number        TEXT,
-            date_arrivee            TEXT,
-            jours_franchise         INTEGER DEFAULT 14,
-            frais_surestarie_jour   REAL    DEFAULT 25000,
-            document_path           TEXT,
-            email                   TEXT,
-            telephone               TEXT,
-            devise                  TEXT    DEFAULT 'CNY',
-            observation             TEXT
+            id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+            date                   TEXT NOT NULL,
+            client                 TEXT NOT NULL,
+            article                TEXT NOT NULL,
+            regime                 TEXT NOT NULL DEFAULT 'C100 - Home Consumption (Duty Paid)',
+            fob_inr                REAL NOT NULL DEFAULT 0,
+            total_facture          REAL NOT NULL DEFAULT 0,
+            solde_du               REAL NOT NULL DEFAULT 0,
+            statut                 TEXT NOT NULL DEFAULT 'In Progress',
+            bl_number              TEXT,
+            container_number       TEXT,
+            date_arrivee           TEXT,
+            jours_franchise        INTEGER DEFAULT 14,
+            frais_surestarie_jour  REAL    DEFAULT 2500,
+            document_path          TEXT,
+            email                  TEXT,
+            telephone              TEXT,
+            devise                 TEXT    DEFAULT 'USD',
+            observation            TEXT
         );
 
         CREATE TABLE IF NOT EXISTS fournisseurs_chine (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            nom_usine   TEXT NOT NULL,
-            ville       TEXT NOT NULL,
-            contact     TEXT,
-            produits    TEXT
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            nom_usine  TEXT NOT NULL,
+            ville      TEXT NOT NULL,
+            contact    TEXT,
+            produits   TEXT
         );
 
         CREATE TABLE IF NOT EXISTS paiements_fournisseurs (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
-            date            TEXT NOT NULL,
-            fournisseur     TEXT NOT NULL,
-            montant_devise  REAL NOT NULL,
-            devise          TEXT NOT NULL,
-            taux_applique   REAL NOT NULL,
-            montant_xof     REAL NOT NULL,
-            statut_paiement TEXT NOT NULL DEFAULT 'Payé'
+            id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            date              TEXT NOT NULL,
+            fournisseur       TEXT NOT NULL,
+            montant_devise    REAL NOT NULL,
+            devise            TEXT NOT NULL,
+            taux_applique     REAL NOT NULL,
+            montant_inr       REAL NOT NULL,
+            statut_paiement   TEXT NOT NULL DEFAULT 'Paid'
         );
 
         CREATE TABLE IF NOT EXISTS users (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
-            username        TEXT UNIQUE NOT NULL,
-            password_hash   TEXT NOT NULL,
-            role            TEXT NOT NULL,
-            statut          TEXT NOT NULL DEFAULT 'Actif'
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            username       TEXT UNIQUE NOT NULL,
+            password_hash  TEXT NOT NULL,
+            role           TEXT NOT NULL,
+            statut         TEXT NOT NULL DEFAULT 'Active'
         );
 
         CREATE TABLE IF NOT EXISTS audit_logs (
@@ -160,16 +156,16 @@ def init_db() -> None:
         """)
 
         default_articles = [
-            ("Station Totale Topographique & GNSS/GPS", "9015.80.00", 5.0,  "Topographie"),
-            ("Smartphones, iPhones & Téléphones portables","8517.13.00",20.0,"High-Tech"),
-            ("Ordinateurs Portables, MacBooks & Tablettes","8471.30.00", 5.0,"Informatique"),
-            ("Panneaux Photovoltaïques / Solaires",        "8541.43.00", 5.0, "Énergie"),
-            ("Groupes Électrogènes (Générateurs)",         "8502.11.00", 5.0, "Machines"),
-            ("Vélos et Bicyclettes sans moteur",           "8712.00.00", 20.0,"Transport (Deux-roues)"),
-            ("Motos & Motocycles (125cc - 250cc)",         "8711.20.00", 20.0,"Transport (Deux-roues)"),
-            ("Voitures de Tourisme (Berlines / SUV)",      "8703.22.00", 20.0,"Transport (Véhicules)"),
-            ("Vêtements Homme (Pantalons, Chemises)",      "6203.00.00", 20.0,"Textile"),
-            ("Sacs à main pour Dames",                     "4202.22.00", 20.0,"Maroquinerie"),
+            ("Topographic Total Station & GNSS/GPS", "9015.80.00", 5.0,  "Surveying"),
+            ("Smartphones, iPhones & Mobile Phones", "8517.13.00", 20.0, "High-Tech"),
+            ("Laptops, MacBooks & Tablets",          "8471.30.00", 5.0,  "IT Hardware"),
+            ("Photovoltaic / Solar Panels",          "8541.43.00", 5.0,  "Energy"),
+            ("Diesel Generators",                    "8502.11.00", 5.0,  "Machinery"),
+            ("Bicycles & Non-motorized Cycles",      "8712.00.00", 20.0, "Two-Wheelers"),
+            ("Motorcycles & Scooters (125cc-250cc)", "8711.20.00", 20.0, "Two-Wheelers"),
+            ("Passenger Cars (Sedans / SUVs)",       "8703.22.00", 20.0, "Vehicles"),
+            ("Men's Apparel (Trousers, Shirts)",     "6203.00.00", 20.0, "Textile"),
+            ("Women's Handbags & Luggage",           "4202.22.00", 20.0, "Leather Goods"),
         ]
         conn.executemany(
             "INSERT OR IGNORE INTO articles (nom, sh, dd, categorie) VALUES (?,?,?,?)",
@@ -177,9 +173,9 @@ def init_db() -> None:
         )
 
         default_users = [
-            ("admin",      hash_password(setting("APP_ADMIN_PASSWORD",      "transit2026")),  "Administrateur",          "Actif"),
-            ("commercial", hash_password(setting("APP_COMMERCIAL_PASSWORD",  "compta2026")),  "Commercial / Déclarant",  "Actif"),
-            ("comptable",  hash_password(setting("APP_COMPTABLE_PASSWORD",   "finance2026")), "Comptable / Trésorerie",  "Actif"),
+            ("admin",      hash_password(setting("APP_ADMIN_PASSWORD",      "transit2026")),  "Administrator",           "Active"),
+            ("commercial", hash_password(setting("APP_COMMERCIAL_PASSWORD",  "compta2026")),  "Sales / Customs Broker",  "Active"),
+            ("comptable",  hash_password(setting("APP_COMPTABLE_PASSWORD",   "finance2026")), "Accounting / Treasury",   "Active"),
         ]
         conn.executemany(
             "INSERT OR IGNORE INTO users (username, password_hash, role, statut) VALUES (?,?,?,?)",
@@ -244,7 +240,7 @@ def add_dossier(
     with db_connection() as conn:
         conn.execute(
             """INSERT INTO dossiers
-               (date, client, article, regime, fob_xof, total_facture, solde_du, statut,
+               (date, client, article, regime, fob_inr, total_facture, solde_du, statut,
                 bl_number, container_number, date_arrivee, jours_franchise,
                 frais_surestarie_jour, document_path, email, telephone, devise, observation)
                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
@@ -257,98 +253,83 @@ def add_dossier(
         )
 
 
-def update_dossier(
-    dossier_id, client, article, regime, solde_du, statut,
-    bl, container, date_arrivee, franchise, frais_surest
-) -> None:
-    with db_connection() as conn:
-        conn.execute(
-            """UPDATE dossiers
-               SET client=?, article=?, regime=?, solde_du=?, statut=?,
-                   bl_number=?, container_number=?, date_arrivee=?,
-                   jours_franchise=?, frais_surestarie_jour=?
-               WHERE id=?""",
-            (client, article, regime, solde_du, statut,
-             bl, container, date_arrivee, franchise, frais_surest, dossier_id),
-        )
-
-
 def add_article(nom, sh, dd, categorie) -> None:
     with db_connection() as conn:
         conn.execute(
             "INSERT INTO articles (nom, sh, dd, categorie) VALUES (?,?,?,?)",
-            (nom.strip(), sh.strip(), dd, categorie.strip() or "Autre"),
+            (nom.strip(), sh.strip(), dd, categorie.strip() or "Other"),
         )
 
 
 def create_user(username, password, role) -> None:
     with db_connection() as conn:
         conn.execute(
-            "INSERT INTO users (username, password_hash, role, statut) VALUES (?,?,?,'Actif')",
+            "INSERT INTO users (username, password_hash, role, statut) VALUES (?,?,?,'Active')",
             (username, hash_password(password), role),
         )
 
-# ─── TAUX DE CHANGE ────────────────────────────────────────────────────────────
+# ─── EXCHANGE RATES (BASE INR) ─────────────────────────────────────────────────
 
 @st.cache_data(ttl=3600)
 def fetch_rates() -> tuple[dict, str]:
-    defaults = {"CNY": 85.0, "USD": 610.0, "EUR": 655.957, "AED": 166.0}
+    defaults = {"USD": 83.5, "CNY": 11.5, "EUR": 90.0, "AED": 22.7}
     try:
         r = requests.get("https://open.er-api.com/v6/latest/USD", timeout=4)
         if r.status_code == 200:
             rates = r.json().get("rates", {})
-            usd_xof = float(rates.get("XOF", 610.0))
+            usd_inr = float(rates.get("INR", 83.5))
             usd_cny = float(rates.get("CNY", 7.2))
+            usd_eur = float(rates.get("EUR", 0.92))
             usd_aed = float(rates.get("AED", 3.67))
             return {
-                "CNY": round(usd_xof / usd_cny, 2) if usd_cny else defaults["CNY"],
-                "USD": round(usd_xof, 2),
-                "EUR": 655.957,
-                "AED": round(usd_xof / usd_aed, 2) if usd_aed else defaults["AED"],
-            }, "🟢 Taux direct API (Temps réel)"
+                "USD": round(usd_inr, 2),
+                "CNY": round(usd_inr / usd_cny, 2) if usd_cny else defaults["CNY"],
+                "EUR": round(usd_inr / usd_eur, 2) if usd_eur else defaults["EUR"],
+                "AED": round(usd_inr / usd_aed, 2) if usd_aed else defaults["AED"],
+            }, "🟢 Live API Exchange Rates Active"
     except Exception:
         pass
-    return defaults, "⚠️ Mode secours (Hors ligne)"
+    return defaults, "⚠️ Offline Mode (Fallback Rates)"
 
-# ─── MOTEUR DE CALCUL DOUANIER UEMOA ───────────────────────────────────────────
+# ─── CUSTOMS CALCULATION ENGINE ───────────────────────────────────────────────
 
-def calculer_droits_douane(caf_xof: float, dd_pct: float, regime_code: str) -> tuple[float, str]:
+def calculate_customs_duties(cif_inr: float, dd_pct: float, regime_code: str) -> tuple[float, str]:
     if "C100" in regime_code:
-        tdd = dd_pct / 100.0
-        redev = 0.010 + 0.008 + 0.002
-        droits = caf_xof * (tdd + redev)
-        tva = (caf_xof + droits) * 0.18
-        total = droits + tva
+        t_dd = dd_pct / 100.0
+        cess_fees = 0.010 + 0.008 + 0.002
+        duties = cif_inr * (t_dd + cess_fees)
+        gst = (cif_inr + duties) * 0.18
+        total = duties + gst
         details = (
-            f"DD ({dd_pct}%): {caf_xof*tdd:,.0f} | "
-            f"RS+PCS+PUA: {caf_xof*redev:,.0f} | TVA 18%: {tva:,.0f} FCFA"
+            f"Basic Customs Duty ({dd_pct}%): {cif_inr*t_dd:,.2f} | "
+            f"Surcharges & Levies: {cif_inr*cess_fees:,.2f} | GST 18%: {gst:,.2f} ₹"
         )
     elif "E100" in regime_code:
-        droits = caf_xof * 0.005
-        total = droits
-        details = f"Suspensif E100 — Redevance entrepôt: {droits:,.0f} FCFA"
+        duties = cif_inr * 0.005
+        total = duties
+        details = f"Suspensive Warehouse E100 — Storage Fee: {duties:,.2f} ₹"
     elif "AT" in regime_code:
-        droits = caf_xof * 0.010
-        total = droits
-        details = f"Admission Temporaire — Taxe AT: {droits:,.0f} FCFA"
+        duties = cif_inr * 0.010
+        total = duties
+        details = f"Temporary Admission — AT Tax: {duties:,.2f} ₹"
     else:
-        tdd = dd_pct / 100.0
-        droits = caf_xof * (tdd + 0.02)
-        tva = (caf_xof + droits) * 0.18
-        total = droits + tva
-        details = f"Régime standard — Total: {total:,.0f} FCFA"
+        t_dd = dd_pct / 100.0
+        duties = cif_inr * (t_dd + 0.02)
+        gst = (cif_inr + duties) * 0.18
+        total = duties + gst
+        details = f"Standard Regime — Total Duties: {total:,.2f} ₹"
     return total, details
 
-# ─── GÉNÉRATEUR DE DEVIS PDF ───────────────────────────────────────────────────
+# ─── PDF QUOTATION GENERATOR ───────────────────────────────────────────────────
 
 def build_pdf(
-    client, article_nom, item_info, regime_code, quantite,
-    fob_xof, fret_xof, assurance_xof, caf_xof,
-    total_douane, total_transit, post_ach,
-    total_facture, acompte, solde_du,
+    client, article_nom, item_info, regime_code, quantity,
+    fob_inr, freight_inr, insurance_inr, cif_inr,
+    total_customs, total_transit, inland_haulage,
+    total_invoice, advance_paid, balance_due,
     bl_num="", container_num=""
 ) -> Path:
-    fname = BASE_DIR / f"Devis_Pro_{safe_filename(client)}.pdf"
+    fname = BASE_DIR / f"Proforma_Invoice_{safe_filename(client)}.pdf"
     doc = SimpleDocTemplate(
         str(fname), pagesize=letter,
         rightMargin=35, leftMargin=35, topMargin=35, bottomMargin=35
@@ -367,17 +348,17 @@ def build_pdf(
     elems = [
         Paragraph("<b>KELANEWIN TRANSIT S.A. (SYDAM PRO ULTRA)</b>", title_style),
         Paragraph(
-            "Agrément Douane N° 2026/CI-ABJ | Port Autonome d'Abidjan &amp; San-Pédro<br/>"
-            "contact@kelanewin-transit.ci | +225 07 00 00 00 00",
+            "Customs License No. 2026/IND-MUM | Authorized Port Logistics &amp; Freight Forwarding<br/>"
+            "contact@kelanewin-transit.com | +91 22 0000 0000",
             sub_style,
         ),
         Spacer(1, 8),
         Paragraph(
-            f"<b>Client :</b> {client}<br/>"
-            f"<b>Date :</b> {datetime.now():%d/%m/%Y}<br/>"
-            f"<b>Régime :</b> {regime_code}<br/>"
-            f"<b>B/L :</b> {bl_num or 'En attente'} &nbsp;|&nbsp; "
-            f"<b>Conteneur :</b> {container_num or 'En attente'}",
+            f"<b>Client:</b> {client}<br/>"
+            f"<b>Date:</b> {datetime.now():%d/%m/%Y}<br/>"
+            f"<b>Customs Regime:</b> {regime_code}<br/>"
+            f"<b>B/L Number:</b> {bl_num or 'Pending'} &nbsp;|&nbsp; "
+            f"<b>Container Number:</b> {container_num or 'Pending'}",
             body,
         ),
         Spacer(1, 10),
@@ -387,16 +368,16 @@ def build_pdf(
         return Paragraph(text, body)
 
     data = [
-        ["Désignation", "Code SH", "Qté", "Montant FCFA"],
-        [cell(article_nom), item_info["sh"], str(quantite), f"{fob_xof:,.0f}"],
-        ["Fret & Assurance", "-", "-", f"{fret_xof + assurance_xof:,.0f}"],
-        ["Valeur CAF", "-", "-", f"{caf_xof:,.0f}"],
-        [f"Droits & Taxes ({regime_code.split('-')[0].strip()})", "-", "-", f"{total_douane:,.0f}"],
-        ["Port, GUCE & Honoraires", "-", "-", f"{total_transit:,.0f}"],
-        ["Post-acheminement & Surestaries", "-", "-", f"{post_ach:,.0f}"],
-        [cell("<b>TOTAL GÉNÉRAL</b>"), "", "", cell(f"<b>{total_facture:,.0f} FCFA</b>")],
-        ["Acompte versé", "", "", f"{acompte:,.0f} FCFA"],
-        [cell("<b>SOLDE RESTANT</b>"), "", "", cell(f"<b>{solde_du:,.0f} FCFA</b>")],
+        ["Description", "HS Code", "Qty", "Amount (INR)"],
+        [cell(article_nom), item_info["sh"], str(quantity), f"{fob_inr:,.2f}"],
+        ["Freight & Insurance", "-", "-", f"{freight_inr + insurance_inr:,.2f}"],
+        ["CIF Value", "-", "-", f"{cif_inr:,.2f}"],
+        [f"Customs Duties & Taxes", "-", "-", f"{total_customs:,.2f}"],
+        ["Port Handling, GUCE & Brokerage", "-", "-", f"{total_transit:,.2f}"],
+        ["Inland Haulage & Demurrage Buffer", "-", "-", f"{inland_haulage:,.2f}"],
+        [cell("<b>TOTAL INVOICE</b>"), "", "", cell(f"<b>{total_invoice:,.2f} ₹</b>")],
+        ["Advance Payment", "", "", f"{advance_paid:,.2f} ₹"],
+        [cell("<b>BALANCE DUE</b>"), "", "", cell(f"<b>{balance_due:,.2f} ₹</b>")],
     ]
     tbl = Table(data, colWidths=[230, 80, 45, 145])
     tbl.setStyle(TableStyle([
@@ -413,23 +394,23 @@ def build_pdf(
         tbl,
         Spacer(1, 16),
         Paragraph(
-            "<b>Conditions :</b> 50 % à la commande, solde avant BAE.<br/>"
-            f"Arrêtée à <b>{total_facture:,.0f} FCFA</b>. Cachet &amp; Signature :",
+            "<b>Terms:</b> 50% advance upon order confirmation, balance payable prior to delivery.<br/>"
+            f"Certified Amount: <b>{total_invoice:,.2f} INR</b>. Stamp &amp; Signature:",
             body,
         ),
     ])
     doc.build(elems)
     return fname
 
-# ─── ASSISTANT IA GROQ ─────────────────────────────────────────────────────────
+# ─── GROQ AI ASSISTANT ─────────────────────────────────────────────────────────
 
 def ask_ai(api_key: str, question: str, context: str) -> tuple[str | None, list[str]]:
     if not Groq or not api_key:
-        return None, ["Bibliothèque groq absente ou clé API manquante."]
+        return None, ["Groq library is not installed or API key is missing."]
     client = Groq(api_key=api_key)
     system_prompt = (
-        "Tu es l'assistant expert en douane, transit et logistique portuaire de Kelanewin Transit en Côte d'Ivoire. "
-        "Maîtrise parfaite du SYDAM, du Tarif Douanier UEMOA et des procédures portuaires d'Abidjan."
+        "You are the expert customs, international trade, and port logistics AI assistant for Kelanewin Transit. "
+        "You have complete mastery of international tariffs, import compliance, customs regimes, and freight forwarding operations."
     )
     errors: list[str] = []
     for model in ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]:
@@ -438,7 +419,7 @@ def ask_ai(api_key: str, question: str, context: str) -> tuple[str | None, list[
                 model=model,
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"Contexte: {context}\n\nQuestion: {question}"},
+                    {"role": "user", "content": f"Context: {context}\n\nQuestion: {question}"},
                 ],
                 temperature=0.2,
                 max_tokens=1200,
@@ -448,19 +429,19 @@ def ask_ai(api_key: str, question: str, context: str) -> tuple[str | None, list[
             errors.append(f"{model}: {exc}")
     return None, errors
 
-# ─── EXPORT EXCEL ──────────────────────────────────────────────────────────────
+# ─── EXCEL EXPORT ──────────────────────────────────────────────────────────────
 
 def export_excel(df: pd.DataFrame) -> bytes:
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="Dossiers_Transit")
+        df.to_excel(writer, index=False, sheet_name="Transit_Dossiers")
     return buf.getvalue()
 
-# ─── DESIGN iOS SPRINGBOARD 3D & CONFIGURATION PAGE ──────────────────────────────
+# ─── iOS SPRINGBOARD 3D DESIGN & PAGE CONFIGURATION ─────────────────────────────
 
 st.set_page_config(
-    page_title="Kelanewin Transit — Chine/Côte d'Ivoire",
-    page_icon="🇨🇮",
+    page_title="Kelanewin Transit — Global Import-Export",
+    page_icon="🌐",
     layout="wide",
 )
 
@@ -536,7 +517,7 @@ div[data-testid="stButton"] > button {
 </style>
 """, unsafe_allow_html=True)
 
-# ─── GESTION SESSION & AUTH ────────────────────────────────────────────────────
+# ─── SESSION & AUTHENTICATION ──────────────────────────────────────────────────
 
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
@@ -551,80 +532,80 @@ if not st.session_state.authenticated:
     col_l, col_m, col_r = st.columns([1, 2, 1])
     with col_m:
         st.markdown('<div class="custom-card">', unsafe_allow_html=True)
-        st.subheader("🔐 Connexion — Kelanewin Transit")
-        st.caption("Sécurité Cryptographique · Contrôle d'Accès RBAC")
-        u_input = st.text_input("Identifiant")
-        p_input = st.text_input("Mot de passe", type="password")
-        if st.button("Se connecter", use_container_width=True, type="primary"):
+        st.subheader("🔐 Secure Sign In — Kelanewin Transit")
+        st.caption("Cryptographic Security · RBAC Access Control")
+        u_input = st.text_input("Username")
+        p_input = st.text_input("Password", type="password")
+        if st.button("Sign In", use_container_width=True, type="primary"):
             user = get_user(u_input)
             if user is None:
-                st.error("Utilisateur introuvable.")
-            elif user["statut"] != "Actif":
-                st.error("Ce compte a été désactivé.")
+                st.error("User not found.")
+            elif user["statut"] != "Active":
+                st.error("This account has been deactivated.")
             elif hash_password(p_input) == user["password_hash"]:
                 st.session_state.authenticated = True
                 st.session_state.username = user["username"]
                 st.session_state.user_role = user["role"]
-                add_audit(user["username"], "login", "Connexion réussie")
+                add_audit(user["username"], "login", "Successful login")
                 st.rerun()
             else:
-                st.error("Mot de passe incorrect.")
-        st.caption("Accès par défaut : admin / transit2026")
+                st.error("Incorrect password.")
+        st.caption("Default Admin Login: admin / transit2026")
         st.markdown("</div>", unsafe_allow_html=True)
     st.stop()
 
-taux_devises, status_api = fetch_rates()
+exchange_rates, api_status = fetch_rates()
 
 # ─── SIDEBAR ───────────────────────────────────────────────────────────────────
 
-st.sidebar.title("🇨🇮 KELANEWIN TRANSIT")
-st.sidebar.markdown(f"**Utilisateur :** `{st.session_state.username}`")
-st.sidebar.markdown(f"**Rôle :** `{st.session_state.user_role}`")
+st.sidebar.title("🌐 KELANEWIN TRANSIT")
+st.sidebar.markdown(f"**User:** `{st.session_state.username}`")
+st.sidebar.markdown(f"**Role:** `{st.session_state.user_role}`")
 st.sidebar.markdown("---")
 
-groq_key_input = st.sidebar.text_input("🔑 Clé API Groq", value=st.session_state.groq_api_key, type="password")
+groq_key_input = st.sidebar.text_input("🔑 Groq API Key", value=st.session_state.groq_api_key, type="password")
 if groq_key_input != st.session_state.groq_api_key:
     st.session_state.groq_api_key = groq_key_input
 
-st.sidebar.subheader("💱 Taux de change (FCFA)")
-st.sidebar.caption(status_api)
-taux_cny = st.sidebar.number_input("1 CNY →", value=taux_devises["CNY"], step=0.1, format="%.2f")
-taux_usd = st.sidebar.number_input("1 USD →", value=taux_devises["USD"], step=1.0, format="%.2f")
-TAUX_MAP = {"CNY": taux_cny, "USD": taux_usd, "EUR": 655.957, "AED": 166.0}
+st.sidebar.subheader("💱 Exchange Rates (INR)")
+st.sidebar.caption(api_status)
+rate_usd = st.sidebar.number_input("1 USD →", value=exchange_rates["USD"], step=1.0, format="%.2f")
+rate_cny = st.sidebar.number_input("1 CNY →", value=exchange_rates["CNY"], step=0.5, format="%.2f")
+RATE_MAP = {"USD": rate_usd, "CNY": rate_cny, "EUR": 90.0, "AED": 22.7}
 
 st.sidebar.markdown("---")
-if st.sidebar.button("🚪 Se déconnecter", use_container_width=True):
-    add_audit(st.session_state.username, "logout", "Déconnexion")
+if st.sidebar.button("🚪 Sign Out", use_container_width=True):
+    add_audit(st.session_state.username, "logout", "User signed out")
     st.session_state.authenticated = False
     st.rerun()
 
-# ─── EN-TÊTE & MENU SPRINGBOARD ───────────────────────────────────────────────
+# ─── HEADER & SPRINGBOARD MENU ─────────────────────────────────────────────────
 
 st.markdown("""
 <div class="header-banner">
-  <h1>📦 KELANEWIN TRANSIT · CHINE ➔ CÔTE D'IVOIRE</h1>
-  <p>Plateforme Intégrée d'Import-Export & Gestion Douanière (SYDAM Pro Ultra)</p>
+  <h1>📦 KELANEWIN TRANSIT · GLOBAL IMPORT-EXPORT</h1>
+  <p>Integrated Freight Forwarding, Customs Clearance & Supply Chain Management Platform</p>
 </div>
 """, unsafe_allow_html=True)
 
 st.markdown('<div class="springboard-container">', unsafe_allow_html=True)
-st.markdown("### 📱 Menu d'Application Principal (iOS Style Grid)")
+st.markdown("### 📱 Main Application Modules (iOS SpringBoard Grid)")
 
 menu_options = [
     "📈 Dashboard",
-    "📄 Cotation & Douane",
-    "📦 Calcul CBM & Colisage",
-    "💳 Paiements Fournisseurs",
-    "🚨 Surestaries",
-    "🗺️ Tracking Chine-Abidjan",
+    "📄 Quotation & Customs",
+    "📦 CBM & Cargo Calculator",
+    "💳 Supplier Payments",
+    "🚨 Demurrage & Detention",
+    "🗺️ Global Tracking",
     "📂 CRM & Dossiers",
-    "🇨🇳 Fournisseurs Chine",
-    "🤖 Assistant IA",
-    "📚 Base SH",
+    "🇨🇳 Overseas Suppliers",
+    "🤖 AI Customs Assistant",
+    "📚 HS Code Database",
 ]
-is_admin = st.session_state.user_role == "Administrateur"
+is_admin = st.session_state.user_role == "Administrator"
 if is_admin:
-    menu_options.append("🔐 Admin & Audit")
+    menu_options.append("🔐 Admin & Audit Logs")
 
 cols = st.columns(3)
 if "selected_app" not in st.session_state:
@@ -636,39 +617,39 @@ for idx, option in enumerate(menu_options):
         if st.button(option, use_container_width=True):
             st.session_state.selected_app = option
 
-st.markdown(f"**Module actif :** `{st.session_state.selected_app}`")
+st.markdown(f"**Active Module:** `{st.session_state.selected_app}`")
 st.markdown('</div>', unsafe_allow_html=True)
 
 selected_tab = st.session_state.selected_app
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# ROUTAGE DES MODULES
+# MODULE ROUTING
 # ═══════════════════════════════════════════════════════════════════════════════
 
 if selected_tab == "📈 Dashboard":
     st.markdown('<div class="custom-card">', unsafe_allow_html=True)
-    st.subheader("📈 Performance Financière & Opérationnelle")
+    st.subheader("📈 Financial & Operational Performance")
     df_d = get_dossiers()
     if df_d.empty:
-        st.info("Aucun dossier enregistré. Créez votre premier dossier dans Cotation & Douane.")
+        st.info("No dossiers recorded yet. Create your first dossier in 'Quotation & Customs'.")
     else:
-        tot_ca    = df_d["total_facture"].sum()
-        tot_solde  = df_d["solde_du"].sum()
-        nb_dos     = len(df_d)
-        nb_livres  = int((df_d["statut"] == "Livré au Client").sum())
+        tot_ca = df_d["total_facture"].sum()
+        tot_solde = df_d["solde_du"].sum()
+        nb_dos = len(df_d)
+        nb_delivered = int((df_d["statut"] == "Delivered to Client").sum())
 
         k1, k2, k3, k4 = st.columns(4)
         kpis = [
-            ("Facturation Cumulée", f"{tot_ca:,.0f} FCFA", "#38BDF8"),
-            ("Soldes à Recouvrer",  f"{tot_solde:,.0f} FCFA", "#F59E0B"),
-            ("Total Dossiers",      str(nb_dos), "#38BDF8"),
-            ("Dossiers Livrés",     str(nb_livres), "#10B981"),
+            ("Total Billings", f"{tot_ca:,.2f} ₹", "#38BDF8"),
+            ("Outstanding Receivables", f"{tot_solde:,.2f} ₹", "#F59E0B"),
+            ("Total Dossiers", str(nb_dos), "#38BDF8"),
+            ("Delivered Shipments", str(nb_delivered), "#10B981"),
         ]
-        for col, (titre, valeur, color) in zip([k1, k2, k3, k4], kpis):
+        for col, (title, val, color) in zip([k1, k2, k3, k4], kpis):
             with col:
                 st.markdown(
-                    f'<div class="kpi-card"><div class="kpi-title">{titre}</div>'
-                    f'<div class="kpi-value" style="color:{color};">{valeur}</div></div>',
+                    f'<div class="kpi-card"><div class="kpi-title">{title}</div>'
+                    f'<div class="kpi-value" style="color:{color};">{val}</div></div>',
                     unsafe_allow_html=True,
                 )
 
@@ -676,244 +657,299 @@ if selected_tab == "📈 Dashboard":
             st.markdown("<br/>", unsafe_allow_html=True)
             g1, g2 = st.columns(2)
             with g1:
-                fig = px.pie(df_d, names="statut", title="Répartition par Statut Opérationnel", hole=0.4)
+                fig = px.pie(df_d, names="statut", title="Shipment Status Breakdown", hole=0.4)
                 fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
                 st.plotly_chart(fig, use_container_width=True)
             with g2:
-                fig2 = px.bar(df_d, x="article", y="total_facture", color="regime", title="Facturation par Article & Régime")
+                fig2 = px.bar(df_d, x="article", y="total_facture", color="regime", title="Billings by Article & Customs Regime")
                 fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
                 st.plotly_chart(fig2, use_container_width=True)
         else:
             st.dataframe(df_d[["date", "client", "article", "total_facture", "statut"]], use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
-elif selected_tab == "📄 Cotation & Douane":
+elif selected_tab == "📄 Quotation & Customs":
     df_articles = get_articles()
     st.markdown('<div class="custom-card">', unsafe_allow_html=True)
-    st.subheader("📄 Simulateur de Cotation & Facturation Pro (Chine ➔ Abidjan)")
+    st.subheader("📄 Professional Quotation & Customs Calculator")
     
     col_s1, col_s2 = st.columns(2)
     with col_s1:
-        client_nom = st.text_input("Nom du Client / Entreprise", "SARL Global Trade CI")
-        email_cl = st.text_input("Email Client", "client@globaltrade.ci")
-        article_choisi = st.selectbox("Article / Marchandise", df_articles["nom"].tolist())
-        item_row = df_articles[df_articles["nom"] == article_choisi].iloc[0]
-        regime_choisi = st.selectbox("Régime Douanier", REGIMES)
+        client_name = st.text_input("Client / Company Name", "Global Trade Importers Ltd")
+        client_email = st.text_input("Client Email", "client@globaltrade.in")
+        article_selected = st.selectbox("Article / Commodity", df_articles["nom"].tolist())
+        item_row = df_articles[df_articles["nom"] == article_selected].iloc[0]
+        regime_selected = st.selectbox("Customs Regime", REGIMES)
         
     with col_s2:
-        devise_achat = st.selectbox("Devise d'achat fournisseur", ["CNY", "USD", "EUR"], index=0)
-        montant_devise = st.number_input("Facture Fournisseur (Devise)", value=50000.0, step=1000.0)
-        quantite_art = st.number_input("Quantité d'unités", value=100, step=1)
-        fret_devise = st.number_input("Fret international (Devise)", value=3000.0, step=100.0)
-        assurance_devise = st.number_input("Assurance maritime (Devise)", value=500.0, step=50.0)
+        purchase_currency = st.selectbox("Supplier Invoice Currency", ["USD", "CNY", "EUR", "AED"], index=0)
+        invoice_amount = st.number_input("Supplier Invoice Amount (Foreign Currency)", value=50000.0, step=1000.0)
+        quantity_items = st.number_input("Quantity of Units", value=100, step=1)
+        freight_currency = st.number_input("International Freight (Foreign Currency)", value=3000.0, step=100.0)
+        insurance_currency = st.number_input("Marine Insurance (Foreign Currency)", value=500.0, step=50.0)
 
-    taux_actuel = TAUX_MAP.get(devise_achat, 85.0)
-    fob_xof = montant_devise * taux_actuel
-    fret_xof = fret_devise * taux_actuel
-    assurance_xof = assurance_devise * taux_actuel
-    caf_xof = fob_xof + fret_xof + assurance_xof
+    current_rate = RATE_MAP.get(purchase_currency, 83.5)
+    fob_inr = invoice_amount * current_rate
+    freight_inr = freight_currency * current_rate
+    insurance_inr = insurance_currency * current_rate
+    cif_inr = fob_inr + freight_inr + insurance_inr
 
-    dd_taux = float(item_row["dd"])
-    total_douane, details_douane = calculer_droits_douane(caf_xof, dd_taux, regime_choisi)
+    dd_rate = float(item_row["dd"])
+    total_customs, customs_details = calculate_customs_duties(cif_inr, dd_rate, regime_selected)
 
-    frais_port = 150000.0
-    frais_guce = 45000.0
-    honoraires = max(100000.0, fob_xof * 0.03)
-    total_transit = frais_port + frais_guce + honoraires
+    port_fees = 15000.0
+    guce_fees = 4500.0
+    brokerage_fees = max(10000.0, fob_inr * 0.03)
+    total_transit = port_fees + guce_fees + brokerage_fees
 
-    post_acheminement = 120000.0
-    total_facture = caf_xof + total_douane + total_transit + post_acheminement
+    inland_haulage = 12000.0
+    total_invoice = cif_inr + total_customs + total_transit + inland_haulage
 
     st.markdown("---")
     rc1, rc2, rc3, rc4 = st.columns(4)
-    rc1.metric("Valeur FOB (FCFA)", f"{fob_xof:,.0f}")
-    rc2.metric("Valeur CAF (FCFA)", f"{caf_xof:,.0f}")
-    rc3.metric("Droits & Taxes", f"{total_douane:,.0f} FCFA")
-    rc4.metric("TOTAL GÉNÉRAL", f"{total_facture:,.0f} FCFA")
+    rc1.metric("FOB Value (INR)", f"{fob_inr:,.2f} ₹")
+    rc2.metric("CIF Value (INR)", f"{cif_inr:,.2f} ₹")
+    rc3.metric("Customs Duties & GST", f"{total_customs:,.2f} ₹")
+    rc4.metric("TOTAL INVOICE", f"{total_invoice:,.2f} ₹")
 
-    acompte_verse = st.number_input("Acompte versé par le client (FCFA)", value=total_facture * 0.5, step=50000.0)
-    solde_restant = total_facture - acompte_verse
+    advance_paid = st.number_input("Advance Payment Received (INR)", value=total_invoice * 0.5, step=10000.0)
+    balance_due = total_invoice - advance_paid
 
     col_btn1, col_btn2 = st.columns(2)
     with col_btn1:
-        if st.button("📄 Générer le Devis PDF Pro", use_container_width=True, type="primary"):
+        if st.button("📄 Generate Proforma PDF", use_container_width=True, type="primary"):
             pdf_path = build_pdf(
-                client=client_nom, article_nom=article_choisi, item_info=item_row,
-                regime_code=regime_choisi, quantite=quantite_art, fob_xof=fob_xof,
-                fret_xof=fret_xof, assurance_xof=assurance_xof, caf_xof=caf_xof,
-                total_douane=total_douane, total_transit=total_transit, post_ach=post_acheminement,
-                total_facture=total_facture, acompte=acompte_verse, solde_du=solde_restant
+                client=client_name, article_nom=article_selected, item_info=item_row,
+                regime_code=regime_selected, quantity=quantity_items, fob_inr=fob_inr,
+                freight_inr=freight_inr, insurance_inr=insurance_inr, cif_inr=cif_inr,
+                total_customs=total_customs, total_transit=total_transit, inland_ach=inland_haulage,
+                total_invoice=total_invoice, advance_paid=advance_paid, balance_due=balance_due
             )
             with open(pdf_path, "rb") as f:
-                st.download_button("📥 Télécharger Devis PDF", f.read(), file_name=pdf_path.name, mime="application/pdf", use_container_width=True)
+                st.download_button("📥 Download Proforma PDF", f.read(), file_name=pdf_path.name, mime="application/pdf", use_container_width=True)
 
     with col_btn2:
-        if st.button("💾 Enregistrer dans le CRM", use_container_width=True):
+        if st.button("💾 Save to CRM Dossiers", use_container_width=True):
             add_dossier(
-                client=client_nom, article=article_choisi, regime=regime_choisi,
-                fob=fob_xof, total=total_facture, solde=solde_restant, statut="En cours",
+                client=client_name, article=article_selected, regime=regime_selected,
+                fob=fob_inr, total=total_invoice, solde=balance_due, statut="In Progress",
                 bl="", container="", date_arrivee=(datetime.now() + timedelta(days=25)).strftime("%Y-%m-%d"),
-                franchise=14, frais_surest=25000.0, email=email_cl, telephone="+225 07000000",
-                devise=devise_achat, observation=f"Import Chine - {quantite_art} unités"
+                franchise=14, frais_surest=2500.0, email=client_email, telephone="+91 9800000000",
+                devise=purchase_currency, observation=f"Global Import - {quantity_items} units"
             )
-            st.success("Dossier enregistré avec succès !")
+            st.success("Dossier successfully saved to CRM!")
     st.markdown("</div>", unsafe_allow_html=True)
 
-elif selected_tab == "📦 Calcul CBM & Colisage":
+elif selected_tab == "📦 CBM & Cargo Calculator":
     st.markdown('<div class="custom-card">', unsafe_allow_html=True)
-    st.subheader("📦 Calculateur de Volume (CBM) & Groupage Conteneur")
-    st.caption("Optimisez le remplissage de vos conteneurs pour vos marchandises achetées en Chine.")
+    st.subheader("📦 CBM Volume & Container Stowage Calculator")
+    st.caption("Optimize container loading and LCL/FCL consolidation for global shipments.")
     
     col_c1, col_c2, col_c3 = st.columns(3)
     with col_c1:
-        longueur_cm = st.number_input("Longueur par carton (cm)", value=50.0, step=1.0)
+        length_cm = st.number_input("Carton Length (cm)", value=50.0, step=1.0)
     with col_c2:
-        largeur_cm = st.number_input("Largeur par carton (cm)", value=40.0, step=1.0)
+        width_cm = st.number_input("Carton Width (cm)", value=40.0, step=1.0)
     with col_c3:
-        hauteur_cm = st.number_input("Hauteur par carton (cm)", value=30.0, step=1.0)
+        height_cm = st.number_input("Carton Height (cm)", value=30.0, step=1.0)
         
-    nb_cartons = st.number_input("Nombre total de cartons", value=200, step=1)
+    total_cartons = st.number_input("Total Number of Cartons", value=200, step=1)
     
-    # Calcul CBM
-    cbm_unitaire = (longueur_cm * largeur_cm * hauteur_cm) / 1_000_000
-    cbm_total = cbm_unitaire * nb_cartons
+    cbm_unit = (length_cm * width_cm * height_cm) / 1_000_000
+    cbm_total = cbm_unit * total_cartons
     
     st.markdown("---")
     m1, m2 = st.columns(2)
-    m1.metric("Volume par Carton", f"{cbm_unitaire:.4f} CBM (m³)")
-    m2.metric("Volume Total de la Cargaison", f"{cbm_total:.2f} CBM (m³)")
+    m1.metric("Volume per Carton", f"{cbm_unit:.4f} CBM (m³)")
+    m2.metric("Total Cargo Volume", f"{cbm_total:.2f} CBM (m³)")
     
-    # Estimation conteneur
     if cbm_total <= 28:
-        st.success("💡 Suggestion logistique : Votre volume tient parfaitement dans un **Conteneur 20 pieds (20' Dry)** ou en mode Groupage LCL.")
+        st.success("💡 Logistical Recommendation: Your volume fits perfectly into a **20-foot Dry Container (20' Dry)** or LCL Consolidation.")
     elif cbm_total <= 58:
-        st.success("💡 Suggestion logistique : Votre volume correspond à un **Conteneur 40 pieds (40' Dry)**.")
+        st.success("💡 Logistical Recommendation: Your volume corresponds to a **40-foot Dry Container (40' Dry)**.")
     else:
-        st.warning("⚠️ Volume important : Nécessite un **Conteneur 40 High Cube (40' HC)** ou plusieurs conteneurs.")
+        st.warning("⚠️ High Volume Warning: Requires a **40-foot High Cube (40' HC)** container or multiple shipments.")
     st.markdown("</div>", unsafe_allow_html=True)
 
-elif selected_tab == "💳 Paiements Fournisseurs":
+elif selected_tab == "💳 Supplier Payments":
     st.markdown('<div class="custom-card">', unsafe_allow_html=True)
-    st.subheader("💳 Suivi & Gestion des Paiements Fournisseurs en Chine")
+    st.subheader("💳 Overseas Supplier Payments & Remittances")
     
-    with st.form("form_paiement"):
-        f_nom = st.text_input("Nom de l'usine / Fournisseur (ex: Yiwu Electronics)")
-        f_montant = st.number_input("Montant en Devise (Yuan/USD)", value=10000.0, step=500.0)
-        f_devise = st.selectbox("Devise", ["CNY", "USD", "EUR"])
-        f_taux = st.number_input("Taux de change appliqué (vers FCFA)", value=85.0 if f_devise == "CNY" else 610.0, step=0.1)
-        
-        montant_total_xof = f_montant * f_taux
-        st.write(f"**Équivalent calculé :** `{montant_total_xof:,.0f} FCFA`")
-        
-        if st.form_submit_button("Enregistrer le règlement", type="primary"):
-            if f_nom:
-                with db_connection() as conn:
-                    conn.execute(
-                        "INSERT INTO paiements_fournisseurs (date, fournisseur, montant_devise, devise, taux_applique, montant_xof, statut_paiement) VALUES (?, ?, ?, ?, ?, ?, 'Payé')",
-                        (datetime.now().strftime("%Y-%m-%d"), f_nom, f_montant, f_devise, f_taux, montant_total_xof)
-                    )
-                st.success("Paiement enregistré et tracé dans le grand livre !")
-                st.rerun()
-                
-    st.markdown("---")
-    st.markdown("### 📋 Historique des règlements usines")
     df_p = get_paiements()
+    with st.form("form_paiement"):
+        f_nom = st.text_input("Supplier / Factory Name (e.g., Shenzhen Tech Ltd)")
+        montant_dev = st.number_input("Amount in Foreign Currency", value=10000.0, step=500.0)
+        dev_choisie = st.selectbox("Currency", ["USD", "CNY", "EUR", "AED"])
+        taux_app = st.number_input("Applied Exchange Rate (INR)", value=RATE_MAP.get(dev_choisie, 83.5))
+        submit_p = st.form_submit_button("Record Payment")
+        
+        if submit_p:
+            montant_inr = montant_dev * taux_app
+            with db_connection() as conn:
+                conn.execute(
+                    """INSERT INTO paiements_fournisseurs 
+                       (date, fournisseur, montant_devise, devise, taux_applique, montant_inr, statut_paiement)
+                       VALUES (?,?,?,?,?,?,?)""",
+                    (datetime.now().strftime("%Y-%m-%d %H:%M"), f_nom, montant_dev, dev_choisie, taux_app, montant_inr, "Paid")
+                )
+            st.success(f"Payment of {montant_inr:,.2f} INR recorded successfully!")
+            st.rerun()
+
+    st.markdown("### Payment History")
     if not df_p.empty:
         st.dataframe(df_p, use_container_width=True)
     else:
-        st.info("Aucun paiement enregistré pour l'instant.")
+        st.info("No supplier payments recorded yet.")
     st.markdown("</div>", unsafe_allow_html=True)
 
-elif selected_tab == "🚨 Surestaries":
+elif selected_tab == "🚨 Demurrage & Detention":
     st.markdown('<div class="custom-card">', unsafe_allow_html=True)
-    st.subheader("🚨 Suivi des Surestaries Conteneurs (Port d'Abidjan)")
+    st.subheader("🚨 Demurrage & Detention Fee Calculator")
+    
     df_d = get_dossiers()
     if df_d.empty:
-        st.info("Aucun dossier actif.")
+        st.info("No active dossiers available.")
     else:
-        for idx, row in df_d.iterrows():
-            if row["date_arrivee"]:
-                try:
-                    d_arr = datetime.strptime(row["date_arrivee"], "%Y-%m-%d")
-                    jours_ecoules = (datetime.now() - d_arr).days
-                    franchise = int(row["jours_franchise"] or 14)
-                    coût_jour = float(row["frais_surestarie_jour"] or 25000)
-                    jours_retard = max(0, jours_ecoules - franchise)
-                    montant = jours_retard * coût_jour
-                    with st.expander(f"📦 Dossier #{row['id']} — Client : {row['client']}"):
-                        if jours_retard > 0:
-                            st.markdown(f'<div class="alert-red"><b>Pénalité active :</b> {montant:,.0f} FCFA ({jours_retard} jours de retard).</div>', unsafe_allow_html=True)
-                        else:
-                            st.markdown(f'<div class="alert-green"><b>Dans les délais :</b> Reste {franchise - jours_ecoules} jours de franchise.</div>', unsafe_allow_html=True)
-                except Exception:
-                    pass
+        dossier_sel = st.selectbox("Select Dossier / Container", df_d["id"].astype(str) + " - " + df_d["client"] + " (" + df_d["container_number"].fillna("No Container") + ")")
+        dos_id = int(dossier_sel.split(" - ")[0])
+        row_d = df_d[df_d["id"] == dos_id].iloc[0]
+        
+        date_arr = st.date_input("Port Arrival Date", value=datetime.strptime(row_d["date_arrivee"], "%Y-%m-%d") if row_d["date_arrivee"] else datetime.now().date())
+        franchise = st.number_input("Shipping Line Free Days", value=int(row_d["jours_franchise"] or 14))
+        cout_jour = st.number_input("Daily Demurrage Rate (INR)", value=float(row_d["frais_surestarie_jour"] or 2500.0))
+        
+        days_elapsed = (datetime.now().date() - date_arr).days
+        days_overdue = max(0, days_elapsed - franchise)
+        demurrage_total = days_overdue * cout_jour
+        
+        sc1, sc2, sc3 = st.columns(3)
+        sc1.metric("Days Elapsed", f"{days_elapsed} days")
+        sc2.metric("Overdue Days", f"{days_overdue} days")
+        sc3.metric("Estimated Penalties", f"{demurrage_total:,.2f} ₹")
+        
+        if days_overdue > 0:
+            st.markdown(f'<div class="alert-red"><b>Warning:</b> This container has exceeded the free period by {days_overdue} days! Demurrage charges are accumulating.</div>', unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="alert-green"><b>Healthy Status:</b> Within shipping line free days. No demurrage fees incurred.</div>', unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
-elif selected_tab == "🗺️ Tracking Chine-Abidjan":
+elif selected_tab == "🗺️ Global Tracking":
     st.markdown('<div class="custom-card">', unsafe_allow_html=True)
-    st.subheader("🗺️ Tracking Maritime en Temps Réel (Ningbo / Shanghai ➔ Abidjan)")
-    st.markdown("> * **Ligne :** Asie - Afrique de l'Ouest (MSC / CMA CGM)\n> * **ETA Port d'Abidjan :** Dans 14 jours")
-    map_data = pd.DataFrame({
-        "lat": [31.2304, 1.2921, 12.8628, 5.3600],
-        "lon": [121.4737, 103.8198, 45.0340, -4.0083],
-        "lieu": ["Shanghai (Chine)", "Singapour (Hub)", "Golfe d'Aden", "Port d'Abidjan (CI)"]
-    })
-    st.map(map_data, zoom=2)
+    st.subheader("🗺️ Maritime Tracking & Port Logistics Pipeline")
+    st.caption("Key milestones in international maritime transport and port clearance.")
+    
+    milestones = [
+        ("1. Factory Pickup & Export Origin", "Loading at factory (Ningbo, Shenzhen, Shanghai, Nhava Sheva)", "Completed"),
+        ("2. Stuffing & Port Customs", "Export documentation validation & customs sealing", "Completed"),
+        ("3. Ocean Freight Transit", "Maritime navigation (Main shipping lanes - approx. 20-30 days)", "In Progress"),
+        ("4. Port Arrival & Terminal Discharge", "Vessel unlading and container yard transfer", "Pending"),
+        ("5. Customs Inspection & Assessment", "System assessment and duty payment clearance", "Pending"),
+        ("6. Delivery Order (DO) & Final Dispatch", "Gate pass issuance and final trucking delivery to client warehouse", "Pending"),
+    ]
+    
+    for title, desc, status in milestones:
+        color_badge = "#10B981" if status == "Completed" else ("#38BDF8" if status == "In Progress" else "#64748B")
+        st.markdown(f"""
+        <div style="background: rgba(30, 41, 59, 0.5); padding: 15px; border-radius: 12px; margin-bottom: 10px; border-left: 4px solid {color_badge};">
+            <b>{title}</b> &nbsp;|&nbsp; <span style="color: {color_badge}; font-weight: 700;">{status}</span><br/>
+            <small style="color: #94A3B8;">{desc}</small>
+        </div>
+        """, unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
 elif selected_tab == "📂 CRM & Dossiers":
     st.markdown('<div class="custom-card">', unsafe_allow_html=True)
-    st.subheader("📂 Gestion CRM & Suivi des Dossiers")
+    st.subheader("📂 Transit Dossiers & Client CRM")
     df_d = get_dossiers()
     if not df_d.empty:
-        st.dataframe(df_d[["id", "date", "client", "article", "total_facture", "solde_du", "statut"]], use_container_width=True)
-        excel_bytes = export_excel(df_d)
-        st.download_button("📊 Exporter les dossiers (Excel)", excel_bytes, "Kelanewin_Dossiers.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        st.dataframe(df_d, use_container_width=True)
+        st.markdown("### Export Data")
+        st.download_button("📥 Download Excel Report", data=export_excel(df_d), file_name="transit_dossiers.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     else:
-        st.info("Aucun dossier.")
+        st.info("No dossiers found.")
     st.markdown("</div>", unsafe_allow_html=True)
 
-elif selected_tab == "🇨🇳 Fournisseurs Chine":
+elif selected_tab == "🇨🇳 Overseas Suppliers":
     st.markdown('<div class="custom-card">', unsafe_allow_html=True)
-    st.subheader("🇨🇳 Annuaire & Suivi des Fournisseurs en Chine (Yiwu / Shenzhen)")
+    st.subheader("🇨🇳 Overseas Suppliers & Factories Directory")
     with st.form("form_fournisseur"):
-        f_nom = st.text_input("Nom de l'usine / Fournisseur")
-        f_ville = st.text_input("Ville en Chine (ex: Yiwu, Guangzhou)")
-        f_prod = st.text_input("Produits principaux")
-        if st.form_submit_button("Enregistrer le fournisseur", type="primary"):
-            if f_nom:
-                with db_connection() as conn:
-                    conn.execute("INSERT INTO fournisseurs_chine (nom_usine, ville, produits) VALUES (?, ?, ?)", (f_nom, f_ville, f_prod))
-                st.success("Fournisseur enregistré avec succès !")
+        nom_us = st.text_input("Factory / Company Name")
+        ville_us = st.text_input("City / Province (e.g., Yiwu, Zhejiang)")
+        contact_us = st.text_input("WeChat / WhatsApp / Email Contact")
+        produits_us = st.text_input("Primary Products")
+        if st.form_submit_button("Add Supplier"):
+            with db_connection() as conn:
+                conn.execute("INSERT INTO fournisseurs_chine (nom_usine, ville, contact, produits) VALUES (?,?,?,?)", 
+                             (nom_us, ville_us, contact_us, produits_us))
+            st.success("Supplier registered successfully!")
+            st.rerun()
+    
+    df_f = get_fournisseurs()
+    if not df_f.empty:
+        st.dataframe(df_f, use_container_width=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+elif selected_tab == "🤖 AI Customs Assistant":
+    st.markdown('<div class="custom-card">', unsafe_allow_html=True)
+    st.subheader("🤖 Expert Customs & Logistics AI Assistant (Powered by Groq)")
+    user_q = st.text_area("Ask any question regarding customs tariffs, import duties, or logistics procedures:", "What are the applicable customs duties and GST for importing solar panels?")
+    if st.button("Query AI Assistant", type="primary"):
+        if not st.session_state.groq_api_key:
+            st.error("Please enter your Groq API Key in the sidebar.")
+        else:
+            with st.spinner("Analyzing inquiry..."):
+                response, errs = ask_ai(st.session_state.groq_api_key, user_q, "Context: Global import operations, international customs compliance.")
+                if response:
+                    st.markdown(f"**AI Expert Response:**\n\n{response}")
+                else:
+                    st.error(f"API Error: {errs}")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+elif selected_tab == "📚 HS Code Database":
+    st.markdown('<div class="custom-card">', unsafe_allow_html=True)
+    st.subheader("📚 Harmonized System (HS) Code & Customs Tariff Reference")
+    df_art = get_articles()
+    st.dataframe(df_art, use_container_width=True)
+    
+    with st.expander("➕ Add New Article / HS Code"):
+        with st.form("new_art"):
+            n_nom = st.text_input("Article Description")
+            n_sh = st.text_input("HS Code (e.g., 8517.13.00)")
+            n_dd = st.number_input("Customs Duty Rate (%)", value=20.0, step=1.0)
+            n_cat = st.text_input("Category")
+            if st.form_submit_button("Add to Database"):
+                add_article(n_nom, n_sh, n_dd, n_cat)
+                st.success("Article added successfully!")
                 st.rerun()
     st.markdown("</div>", unsafe_allow_html=True)
 
-elif selected_tab == "🤖 Assistant IA":
+elif selected_tab == "🔐 Admin & Audit Logs" and is_admin:
     st.markdown('<div class="custom-card">', unsafe_allow_html=True)
-    st.subheader("🤖 Assistant IA SYDAM & Douanes")
-    user_q = st.text_area("Posez votre question sur les procédures d'importation :")
-    if st.button("Interroger l'IA", type="primary"):
-        if st.session_state.groq_api_key and user_q:
-            with st.spinner("Analyse..."):
-                ans, errs = ask_ai(st.session_state.groq_api_key, user_q, "Importation Chine ➔ Côte d'Ivoire")
-                if ans:
-                    st.markdown(ans)
-                else:
-                    st.error(f"Erreur : {errs}")
+    st.subheader("🔐 System Administration & Audit Logs")
+    
+    tab_u, tab_a = st.tabs(["User Management", "Audit Logs"])
+    with tab_u:
+        st.markdown("### Registered Users")
+        st.dataframe(get_users(), use_container_width=True)
+        
+        with st.form("new_user_form"):
+            st.markdown("### Create New User")
+            new_user = st.text_input("Username")
+            new_pass = st.text_input("Password", type="password")
+            new_role = st.selectbox("Role", ROLES)
+            if st.form_submit_button("Create Account"):
+                try:
+                    create_user(new_user, new_pass, new_role)
+                    st.success(f"User {new_user} created successfully!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error: {e}")
+                    
+    with tab_a:
+        st.markdown("### System Activity Audit Logs")
+        df_logs = get_audit_logs()
+        if not df_logs.empty:
+            st.dataframe(df_logs, use_container_width=True)
         else:
-            st.warning("Veuillez renseigner votre clé API Groq dans la barre latérale et saisir une question.")
-    st.markdown("</div>", unsafe_allow_html=True)
-
-elif selected_tab == "📚 Base SH":
-    st.markdown('<div class="custom-card">', unsafe_allow_html=True)
-    st.subheader("📚 Base de Données des Codes SH & Tarifs Douaniers")
-    st.dataframe(get_articles(), use_container_width=True)
-    st.markdown("</div>", unsafe_allow_html=True)
-
-elif selected_tab == "🔐 Admin & Audit" and is_admin:
-    st.markdown('<div class="custom-card">', unsafe_allow_html=True)
-    st.subheader("🔐 Administration & Journaux d'Audit")
-    st.dataframe(get_users(), use_container_width=True)
-    st.markdown("### Journaux d'Audit")
-    st.dataframe(get_audit_logs(50), use_container_width=True)
+            st.info("No audit logs available.")
     st.markdown("</div>", unsafe_allow_html=True)
