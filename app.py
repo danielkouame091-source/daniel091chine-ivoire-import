@@ -54,7 +54,7 @@ REGIMES = [
     "TR - Transit / Re-export",
 ]
 
-ROLES = ["Administrator", "Sales / Customs Broker", "Accounting / Treasury"]
+ROLES = ["Administrator (Creator)", "Sales / Customs Broker", "Accounting / Treasury", "Standard User"]
 
 # ─── UTILITIES & SECURITY ──────────────────────────────────────────────────────
 
@@ -66,6 +66,11 @@ def setting(name: str, default: str = "") -> str:
     except Exception:
         pass
     return os.getenv(name, default)
+
+
+def hash_password(password: str) -> str:
+    salt = setting("APP_SALT", "KelanewinTransit2026SecureSalt")
+    return hashlib.sha256((password + salt).encode("utf-8")).hexdigest()
 
 
 def safe_filename(value: str) -> str:
@@ -133,6 +138,14 @@ def init_db() -> None:
             statut_paiement   TEXT NOT NULL DEFAULT 'Paid'
         );
 
+        CREATE TABLE IF NOT EXISTS users (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            username       TEXT UNIQUE NOT NULL,
+            password_hash  TEXT NOT NULL,
+            role           TEXT NOT NULL,
+            statut         TEXT NOT NULL DEFAULT 'Active'
+        );
+
         CREATE TABLE IF NOT EXISTS audit_logs (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             created_at  TEXT NOT NULL,
@@ -157,6 +170,12 @@ def init_db() -> None:
         conn.executemany(
             "INSERT OR IGNORE INTO articles (nom, sh, dd, categorie) VALUES (?,?,?,?)",
             default_articles,
+        )
+
+        default_admin = ("admin_creator", hash_password(setting("APP_ADMIN_PASSWORD", "creator2026")), "Administrator (Creator)", "Active")
+        conn.executemany(
+            "INSERT OR IGNORE INTO users (username, password_hash, role, statut) VALUES (?,?,?,?)",
+            [default_admin],
         )
 
 
@@ -192,8 +211,21 @@ def get_paiements() -> pd.DataFrame:
     return read_df("SELECT * FROM paiements_fournisseurs ORDER BY id DESC")
 
 
+def get_users() -> pd.DataFrame:
+    return read_df("SELECT id, username, role, statut FROM users ORDER BY id ASC")
+
+
 def get_audit_logs(limit: int = 200) -> pd.DataFrame:
     return read_df("SELECT * FROM audit_logs ORDER BY id DESC LIMIT ?", (limit,))
+
+
+def get_user(username: str):
+    with db_connection() as conn:
+        row = conn.execute(
+            "SELECT id, username, password_hash, role, statut FROM users WHERE username = ?",
+            (username,),
+        ).fetchone()
+    return dict(row) if row else None
 
 
 def add_dossier(
@@ -222,6 +254,14 @@ def add_article(nom, sh, dd, categorie) -> None:
         conn.execute(
             "INSERT INTO articles (nom, sh, dd, categorie) VALUES (?,?,?,?)",
             (nom.strip(), sh.strip(), dd, categorie.strip() or "Other"),
+        )
+
+
+def create_user(username, password, role) -> None:
+    with db_connection() as conn:
+        conn.execute(
+            "INSERT INTO users (username, password_hash, role, statut) VALUES (?,?,?,'Active')",
+            (username, hash_password(password), role),
         )
 
 # ─── EXCHANGE RATES (BASE INR) ─────────────────────────────────────────────────
@@ -473,19 +513,42 @@ div[data-testid="stButton"] > button {
 </style>
 """, unsafe_allow_html=True)
 
-# ─── INITIALIZATION & SESSION STATE (OPEN ACCESS) ──────────────────────────────
+# ─── SESSION STATE & HYBRID ACCESS CONTROL ─────────────────────────────────────
+
+if "is_admin" not in st.session_state:
+    st.session_state.is_admin = False
 
 if "groq_api_key" not in st.session_state:
     st.session_state.groq_api_key = setting("GROQ_API_KEY", "")
 
 exchange_rates, api_status = fetch_rates()
 
-# ─── SIDEBAR ───────────────────────────────────────────────────────────────────
+# ─── SIDEBAR (OPEN ACCESS + CREATOR ADMIN LOGIN) ───────────────────────────────
 
 st.sidebar.title("🌐 KELANEWIN TRANSIT")
-st.sidebar.markdown("**Mode:** `Open Access (Public Mode)`")
+st.sidebar.markdown("**Access Mode:** `Open Collaboration`")
 st.sidebar.markdown("---")
 
+# Creator / Admin Authentication Section in Sidebar
+with st.sidebar.expander("👑 Creator / Admin Portal"):
+    if not st.session_state.is_admin:
+        admin_pass_input = st.text_input("Admin Passcode", type="password")
+        if st.button("Unlock Admin Control", use_container_width=True):
+            user_rec = get_user("admin_creator")
+            if user_rec and hash_password(admin_pass_input) == user_rec["password_hash"]:
+                st.session_state.is_admin = True
+                add_audit("admin_creator", "admin_login", "Creator unlocked administrator portal")
+                st.success("Admin access granted!")
+                st.rerun()
+            else:
+                st.error("Incorrect admin passcode.")
+    else:
+        st.success("🔒 Admin Mode Active (Creator)")
+        if st.button("Lock Admin Portal", use_container_width=True):
+            st.session_state.is_admin = False
+            st.rerun()
+
+st.sidebar.markdown("---")
 groq_key_input = st.sidebar.text_input("🔑 Groq API Key", value=st.session_state.groq_api_key, type="password")
 if groq_key_input != st.session_state.groq_api_key:
     st.session_state.groq_api_key = groq_key_input
@@ -519,8 +582,11 @@ menu_options = [
     "🇨🇳 Overseas Suppliers",
     "🤖 AI Customs Assistant",
     "📚 HS Code Database",
-    "🔐 Audit Logs",
 ]
+
+# Only show Creator Admin Control Panel if logged in as admin
+if st.session_state.is_admin:
+    menu_options.append("👑 Creator Control Panel")
 
 cols = st.columns(3)
 if "selected_app" not in st.session_state:
@@ -838,12 +904,33 @@ elif selected_tab == "📚 HS Code Database":
                 st.rerun()
     st.markdown("</div>", unsafe_allow_html=True)
 
-elif selected_tab == "🔐 Audit Logs":
+elif selected_tab == "👑 Creator Control Panel" and st.session_state.is_admin:
     st.markdown('<div class="custom-card">', unsafe_allow_html=True)
-    st.subheader("🔐 System Activity Audit Logs")
-    df_logs = get_audit_logs()
-    if not df_logs.empty:
-        st.dataframe(df_logs, use_container_width=True)
-    else:
-        st.info("No audit logs available.")
+    st.subheader("👑 Creator Control Panel & System Administration")
+    
+    tab_u, tab_a = st.tabs(["User Management", "System Audit Logs"])
+    with tab_u:
+        st.markdown("### Registered System Accounts")
+        st.dataframe(get_users(), use_container_width=True)
+        
+        with st.form("new_user_form"):
+            st.markdown("### Create New Collaborator Account")
+            new_user = st.text_input("Username")
+            new_pass = st.text_input("Password", type="password")
+            new_role = st.selectbox("Role", ROLES)
+            if st.form_submit_button("Create Account"):
+                try:
+                    create_user(new_user, new_pass, new_role)
+                    st.success(f"User {new_user} created successfully!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error: {e}")
+                    
+    with tab_a:
+        st.markdown("### System Activity Audit Logs")
+        df_logs = get_audit_logs()
+        if not df_logs.empty:
+            st.dataframe(df_logs, use_container_width=True)
+        else:
+            st.info("No audit logs available.")
     st.markdown("</div>", unsafe_allow_html=True)
