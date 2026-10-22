@@ -33,7 +33,7 @@ try:
 except ImportError:
     Groq = None
 
-# ─── CONFIGURATION & CHEMINS ───────────────────────────────────────────────────
+# ─── CONFIGURATION & PATHS ────────────────────────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "transit_enterprise.db"
 UPLOAD_DIR = BASE_DIR / "uploads_dossiers"
@@ -54,7 +54,7 @@ REGIMES = [
     "TR - Transit / Re-export",
 ]
 
-# ─── UTILITAIRES & SÉCURITÉ ────────────────────────────────────────────────────
+# ─── UTILITIES & SECURITY ──────────────────────────────────────────────────────
 
 def setting(name: str, default: str = "") -> str:
     try:
@@ -75,7 +75,7 @@ def safe_filename(value: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", value).strip("._") or "document"
     return cleaned[:120]
 
-# ─── BASE DE DONNÉES & MIGRATIONS ──────────────────────────────────────────────
+# ─── DATABASE & MIGRATIONS ─────────────────────────────────────────────────────
 
 def db_connection() -> sqlite3.Connection:
     conn = sqlite3.connect(str(DB_PATH), timeout=10.0)
@@ -171,7 +171,7 @@ def init_db() -> None:
             default_articles,
         )
 
-        # Clé Administrateur Suprême (Créateur) créée par défaut : MASTER-CREATOR-2026
+        # Master Creator License default (e.g., "MASTER-CREATOR-2026")
         master_key = hash_key("MASTER-CREATOR-2026")
         conn.execute(
             "INSERT OR IGNORE INTO licenses (license_key, holder_name, role, status, created_at) VALUES (?,?,?,?,?)",
@@ -266,7 +266,7 @@ def add_article(nom, sh, dd, categorie) -> None:
             (nom.strip(), sh.strip(), dd, categorie.strip() or "Other"),
         )
 
-# ─── TAUX DE CHANGE (BASE INR / ₹) ─────────────────────────────────────────────
+# ─── EXCHANGE RATES (BASE INR) ─────────────────────────────────────────────────
 
 @st.cache_data(ttl=3600)
 def fetch_rates() -> tuple[dict, str]:
@@ -289,7 +289,7 @@ def fetch_rates() -> tuple[dict, str]:
         pass
     return defaults, "⚠️ Offline Mode (Fallback Rates)"
 
-# ─── MOTEUR DE CALCUL DOUANIER ─────────────────────────────────────────────────
+# ─── CUSTOMS CALCULATION ENGINE ───────────────────────────────────────────────
 
 def calculate_customs_duties(cif_inr: float, dd_pct: float, regime_code: str) -> tuple[float, str]:
     if "C100" in regime_code:
@@ -318,7 +318,7 @@ def calculate_customs_duties(cif_inr: float, dd_pct: float, regime_code: str) ->
         details = f"Standard Regime — Total Duties: {total:,.2f} ₹"
     return total, details
 
-# ─── GÉNÉRATEUR DE DEVIS PDF ───────────────────────────────────────────────────
+# ─── PDF QUOTATION GENERATOR ───────────────────────────────────────────────────
 
 def build_pdf(
     client, article_nom, item_info, regime_code, quantity,
@@ -400,7 +400,7 @@ def build_pdf(
     doc.build(elems)
     return fname
 
-# ─── ASSISTANT IA GROQ ─────────────────────────────────────────────────────────
+# ─── GROQ AI ASSISTANT ─────────────────────────────────────────────────────────
 
 def ask_ai(api_key: str, question: str, context: str) -> tuple[str | None, list[str]]:
     if not Groq or not api_key:
@@ -427,7 +427,7 @@ def ask_ai(api_key: str, question: str, context: str) -> tuple[str | None, list[
             errors.append(f"{model}: {exc}")
     return None, errors
 
-# ─── EXPORT EXCEL ──────────────────────────────────────────────────────────────
+# ─── EXCEL EXPORT ──────────────────────────────────────────────────────────────
 
 def export_excel(df: pd.DataFrame) -> bytes:
     buf = io.BytesIO()
@@ -435,7 +435,7 @@ def export_excel(df: pd.DataFrame) -> bytes:
         df.to_excel(writer, index=False, sheet_name="Transit_Dossiers")
     return buf.getvalue()
 
-# ─── DESIGN iOS SPRINGBOARD 3D ─────────────────────────────────────────────────
+# ─── iOS SPRINGBOARD 3D DESIGN & PAGE CONFIGURATION ─────────────────────────────
 
 st.set_page_config(
     page_title="Kelanewin Transit — Global Import-Export",
@@ -515,7 +515,7 @@ div[data-testid="stButton"] > button {
 </style>
 """, unsafe_allow_html=True)
 
-# ─── ÉCRAN DE VERROUILLAGE / VERIFICATION DE LICENCE ───────────────────────────
+# ─── SESSION STATE & ENTERPRISE LICENSE GATEWAY ────────────────────────────────
 
 if "licensed" not in st.session_state:
     st.session_state.licensed = False
@@ -525,6 +525,7 @@ if "licensed" not in st.session_state:
 if "groq_api_key" not in st.session_state:
     st.session_state.groq_api_key = setting("GROQ_API_KEY", "")
 
+# ─── LOCK SCREEN / LICENSE ACTIVATION GATEWAY ──────────────────────────────────
 if not st.session_state.licensed:
     st.markdown("<br><br>", unsafe_allow_html=True)
     col_l, col_m, col_r = st.columns([1, 2, 1])
@@ -549,14 +550,14 @@ if not st.session_state.licensed:
                 st.error("Invalid or expired license key. Please contact the Chief Creator.")
         
         st.markdown("<br>", unsafe_allow_html=True)
-        st.info("💡 **Master Creator Key for demonstration:** `MASTER-CREATOR-2026`")
+        st.info("💡 **Default Master Creator Key for testing:** `MASTER-CREATOR-2026`")
         st.markdown("</div>", unsafe_allow_html=True)
     st.stop()
 
 exchange_rates, api_status = fetch_rates()
 is_creator_admin = "Creator" in st.session_state.license_role
 
-# ─── BARRE LATÉRALE ────────────────────────────────────────────────────────────
+# ─── SIDEBAR ───────────────────────────────────────────────────────────────────
 
 st.sidebar.title("🌐 KELANEWIN TRANSIT")
 st.sidebar.markdown(f"**License Holder:** `{st.session_state.license_holder}`")
@@ -579,7 +580,7 @@ if st.sidebar.button("🔒 Lock / Revoke Session", use_container_width=True):
     st.session_state.licensed = False
     st.rerun()
 
-# ─── EN-TÊTE & MENU SPRINGBOARD ───────────────────────────────────────────────
+# ─── HEADER & SPRINGBOARD MENU ─────────────────────────────────────────────────
 
 st.markdown("""
 <div class="header-banner">
@@ -604,7 +605,7 @@ menu_options = [
     "📚 HS Code Database",
 ]
 
-# Seul le créateur obtient le panneau d'administration des licences
+# Only the Chief Creator gets the License & Admin Control Panel
 if is_creator_admin:
     menu_options.append("👑 Creator License Manager")
 
@@ -624,7 +625,7 @@ st.markdown('</div>', unsafe_allow_html=True)
 selected_tab = st.session_state.selected_app
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# ROUTAGE DES MODULES
+# MODULE ROUTING
 # ═══════════════════════════════════════════════════════════════════════════════
 
 if selected_tab == "📈 Dashboard":
