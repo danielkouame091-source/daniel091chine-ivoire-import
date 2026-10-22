@@ -1,6 +1,6 @@
 """
 app.py — Kelanewin Transit SYDAM Pro Ultra (iOS SpringBoard 3D Ultimate Edition)
-Global Import-Export & Customs Management Platform (Enterprise Licensing Edition)
+Global Import-Export & Customs Management Platform (China → India / International)
 """
 
 import base64
@@ -54,6 +54,8 @@ REGIMES = [
     "TR - Transit / Re-export",
 ]
 
+ROLES = ["Administrator (Creator)", "Sales / Customs Broker", "Accounting / Treasury", "Standard User"]
+
 # ─── UTILITIES & SECURITY ──────────────────────────────────────────────────────
 
 def setting(name: str, default: str = "") -> str:
@@ -66,9 +68,9 @@ def setting(name: str, default: str = "") -> str:
     return os.getenv(name, default)
 
 
-def hash_key(key_string: str) -> str:
+def hash_password(password: str) -> str:
     salt = setting("APP_SALT", "KelanewinTransit2026SecureSalt")
-    return hashlib.sha256((key_string + salt).encode("utf-8")).hexdigest()
+    return hashlib.sha256((password + salt).encode("utf-8")).hexdigest()
 
 
 def safe_filename(value: str) -> str:
@@ -136,13 +138,12 @@ def init_db() -> None:
             statut_paiement   TEXT NOT NULL DEFAULT 'Paid'
         );
 
-        CREATE TABLE IF NOT EXISTS licenses (
+        CREATE TABLE IF NOT EXISTS users (
             id             INTEGER PRIMARY KEY AUTOINCREMENT,
-            license_key    TEXT UNIQUE NOT NULL,
-            holder_name    TEXT NOT NULL,
+            username       TEXT UNIQUE NOT NULL,
+            password_hash  TEXT NOT NULL,
             role           TEXT NOT NULL,
-            status         TEXT NOT NULL DEFAULT 'Active',
-            created_at     TEXT NOT NULL
+            statut         TEXT NOT NULL DEFAULT 'Active'
         );
 
         CREATE TABLE IF NOT EXISTS audit_logs (
@@ -171,11 +172,10 @@ def init_db() -> None:
             default_articles,
         )
 
-        # Master Creator License default (e.g., "MASTER-CREATOR-2026")
-        master_key = hash_key("MASTER-CREATOR-2026")
-        conn.execute(
-            "INSERT OR IGNORE INTO licenses (license_key, holder_name, role, status, created_at) VALUES (?,?,?,?,?)",
-            (master_key, "Chief Creator (Admin)", "Creator / Master", "Active", datetime.now().strftime("%Y-%m-%d"))
+        default_admin = ("admin_creator", hash_password(setting("APP_ADMIN_PASSWORD", "creator2026")), "Administrator (Creator)", "Active")
+        conn.executemany(
+            "INSERT OR IGNORE INTO users (username, password_hash, role, statut) VALUES (?,?,?,?)",
+            [default_admin],
         )
 
 
@@ -211,31 +211,21 @@ def get_paiements() -> pd.DataFrame:
     return read_df("SELECT * FROM paiements_fournisseurs ORDER BY id DESC")
 
 
-def get_licenses() -> pd.DataFrame:
-    return read_df("SELECT id, holder_name, role, status, created_at FROM licenses ORDER BY id ASC")
+def get_users() -> pd.DataFrame:
+    return read_df("SELECT id, username, role, statut FROM users ORDER BY id ASC")
 
 
 def get_audit_logs(limit: int = 200) -> pd.DataFrame:
     return read_df("SELECT * FROM audit_logs ORDER BY id DESC LIMIT ?", (limit,))
 
 
-def verify_license(raw_key: str):
-    hashed = hash_key(raw_key.strip())
+def get_user(username: str):
     with db_connection() as conn:
         row = conn.execute(
-            "SELECT * FROM licenses WHERE license_key = ? AND status = 'Active'",
-            (hashed,),
+            "SELECT id, username, password_hash, role, statut FROM users WHERE username = ?",
+            (username,),
         ).fetchone()
     return dict(row) if row else None
-
-
-def generate_license(holder: str, role: str, raw_key: str) -> None:
-    hashed = hash_key(raw_key.strip())
-    with db_connection() as conn:
-        conn.execute(
-            "INSERT INTO licenses (license_key, holder_name, role, status, created_at) VALUES (?,?,?,?,?)",
-            (hashed, holder, role, "Active", datetime.now().strftime("%Y-%m-%d"))
-        )
 
 
 def add_dossier(
@@ -264,6 +254,14 @@ def add_article(nom, sh, dd, categorie) -> None:
         conn.execute(
             "INSERT INTO articles (nom, sh, dd, categorie) VALUES (?,?,?,?)",
             (nom.strip(), sh.strip(), dd, categorie.strip() or "Other"),
+        )
+
+
+def create_user(username, password, role) -> None:
+    with db_connection() as conn:
+        conn.execute(
+            "INSERT INTO users (username, password_hash, role, statut) VALUES (?,?,?,'Active')",
+            (username, hash_password(password), role),
         )
 
 # ─── EXCHANGE RATES (BASE INR) ─────────────────────────────────────────────────
@@ -515,55 +513,42 @@ div[data-testid="stButton"] > button {
 </style>
 """, unsafe_allow_html=True)
 
-# ─── SESSION STATE & ENTERPRISE LICENSE GATEWAY ────────────────────────────────
+# ─── SESSION STATE & HYBRID ACCESS CONTROL ─────────────────────────────────────
 
-if "licensed" not in st.session_state:
-    st.session_state.licensed = False
-    st.session_state.license_holder = ""
-    st.session_state.license_role = ""
+if "is_admin" not in st.session_state:
+    st.session_state.is_admin = False
 
 if "groq_api_key" not in st.session_state:
     st.session_state.groq_api_key = setting("GROQ_API_KEY", "")
 
-# ─── LOCK SCREEN / LICENSE ACTIVATION GATEWAY ──────────────────────────────────
-if not st.session_state.licensed:
-    st.markdown("<br><br>", unsafe_allow_html=True)
-    col_l, col_m, col_r = st.columns([1, 2, 1])
-    with col_m:
-        st.markdown('<div class="custom-card">', unsafe_allow_html=True)
-        st.subheader("🔑 Enterprise License Verification")
-        st.caption("Kelanewin Transit SYDAM Pro Ultra — Access Restricted")
-        st.markdown("Please enter your official **License Key** provided by the Chief Creator to activate and access the platform.")
-        
-        entered_key = st.text_input("License Key", type="password", placeholder="Enter key (e.g., MASTER-CREATOR-2026)")
-        
-        if st.button("Activate License & Enter", use_container_width=True, type="primary"):
-            lic = verify_license(entered_key)
-            if lic:
-                st.session_state.licensed = True
-                st.session_state.license_holder = lic["holder_name"]
-                st.session_state.license_role = lic["role"]
-                add_audit(lic["holder_name"], "license_activation", f"Activated with role: {lic['role']}")
-                st.success("License verified successfully! Loading application...")
-                st.rerun()
-            else:
-                st.error("Invalid or expired license key. Please contact the Chief Creator.")
-        
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.info("💡 **Default Master Creator Key for testing:** `MASTER-CREATOR-2026`")
-        st.markdown("</div>", unsafe_allow_html=True)
-    st.stop()
-
 exchange_rates, api_status = fetch_rates()
-is_creator_admin = "Creator" in st.session_state.license_role
 
-# ─── SIDEBAR ───────────────────────────────────────────────────────────────────
+# ─── SIDEBAR (OPEN ACCESS + CREATOR ADMIN LOGIN) ───────────────────────────────
 
 st.sidebar.title("🌐 KELANEWIN TRANSIT")
-st.sidebar.markdown(f"**License Holder:** `{st.session_state.license_holder}`")
-st.sidebar.markdown(f"**Access Tier:** `{st.session_state.license_role}`")
+st.sidebar.markdown("**Access Mode:** `Open Collaboration`")
 st.sidebar.markdown("---")
 
+# Creator / Admin Authentication Section in Sidebar
+with st.sidebar.expander("👑 Creator / Admin Portal"):
+    if not st.session_state.is_admin:
+        admin_pass_input = st.text_input("Admin Passcode", type="password")
+        if st.button("Unlock Admin Control", use_container_width=True):
+            user_rec = get_user("admin_creator")
+            if user_rec and hash_password(admin_pass_input) == user_rec["password_hash"]:
+                st.session_state.is_admin = True
+                add_audit("admin_creator", "admin_login", "Creator unlocked administrator portal")
+                st.success("Admin access granted!")
+                st.rerun()
+            else:
+                st.error("Incorrect admin passcode.")
+    else:
+        st.success("🔒 Admin Mode Active (Creator)")
+        if st.button("Lock Admin Portal", use_container_width=True):
+            st.session_state.is_admin = False
+            st.rerun()
+
+st.sidebar.markdown("---")
 groq_key_input = st.sidebar.text_input("🔑 Groq API Key", value=st.session_state.groq_api_key, type="password")
 if groq_key_input != st.session_state.groq_api_key:
     st.session_state.groq_api_key = groq_key_input
@@ -573,12 +558,6 @@ st.sidebar.caption(api_status)
 rate_usd = st.sidebar.number_input("1 USD →", value=exchange_rates["USD"], step=1.0, format="%.2f")
 rate_cny = st.sidebar.number_input("1 CNY →", value=exchange_rates["CNY"], step=0.5, format="%.2f")
 RATE_MAP = {"USD": rate_usd, "CNY": rate_cny, "EUR": 90.0, "AED": 22.7}
-
-st.sidebar.markdown("---")
-if st.sidebar.button("🔒 Lock / Revoke Session", use_container_width=True):
-    add_audit(st.session_state.license_holder, "session_lock", "User locked session")
-    st.session_state.licensed = False
-    st.rerun()
 
 # ─── HEADER & SPRINGBOARD MENU ─────────────────────────────────────────────────
 
@@ -605,9 +584,9 @@ menu_options = [
     "📚 HS Code Database",
 ]
 
-# Only the Chief Creator gets the License & Admin Control Panel
-if is_creator_admin:
-    menu_options.append("👑 Creator License Manager")
+# Only show Creator Admin Control Panel if logged in as admin
+if st.session_state.is_admin:
+    menu_options.append("👑 Creator Control Panel")
 
 cols = st.columns(3)
 if "selected_app" not in st.session_state:
@@ -925,33 +904,27 @@ elif selected_tab == "📚 HS Code Database":
                 st.rerun()
     st.markdown("</div>", unsafe_allow_html=True)
 
-elif selected_tab == "👑 Creator License Manager" and is_creator_admin:
+elif selected_tab == "👑 Creator Control Panel" and st.session_state.is_admin:
     st.markdown('<div class="custom-card">', unsafe_allow_html=True)
-    st.subheader("👑 Creator License Manager & System Control")
-    st.markdown("En tant que **Créateur**, vous pouvez générer et attribuer des clés de licence uniques pour donner accès à votre application.")
+    st.subheader("👑 Creator Control Panel & System Administration")
     
-    tab_l, tab_a = st.tabs(["Manage Active Licenses", "System Audit Logs"])
-    with tab_l:
-        st.markdown("### Issued Enterprise Licenses")
-        st.dataframe(get_licenses(), use_container_width=True)
+    tab_u, tab_a = st.tabs(["User Management", "System Audit Logs"])
+    with tab_u:
+        st.markdown("### Registered System Accounts")
+        st.dataframe(get_users(), use_container_width=True)
         
-        with st.form("new_license_form"):
-            st.markdown("### Generate New License Key")
-            holder_input = st.text_input("Holder / Collaborator Name (e.g., John Doe - Senior Broker)")
-            role_input = st.selectbox("Access Role", ["Standard Collaborator", "Senior Customs Broker", "Financial Auditor", "External Partner"])
-            raw_key_input = st.text_input("Custom License Passcode / Secret Key (e.g., CLIENT-KEY-999)", type="password")
-            
-            if st.form_submit_button("Generate & Issue License"):
-                if raw_key_input:
-                    try:
-                        generate_license(holder_input, role_input, raw_key_input)
-                        st.success(f"License successfully generated and issued for **{holder_input}**!")
-                        add_audit(st.session_state.license_holder, "generate_license", f"Issued license to {holder_input}")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Error (Key might already exist): {e}")
-                else:
-                    st.warning("Please provide a valid license key string.")
+        with st.form("new_user_form"):
+            st.markdown("### Create New Collaborator Account")
+            new_user = st.text_input("Username")
+            new_pass = st.text_input("Password", type="password")
+            new_role = st.selectbox("Role", ROLES)
+            if st.form_submit_button("Create Account"):
+                try:
+                    create_user(new_user, new_pass, new_role)
+                    st.success(f"User {new_user} created successfully!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error: {e}")
                     
     with tab_a:
         st.markdown("### System Activity Audit Logs")
