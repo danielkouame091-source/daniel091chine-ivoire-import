@@ -1,5 +1,5 @@
 # SNDGIR & Transit ERP — dépendances principales
-streamlit>=1.35.0
+streamlit>=1.40.0
 pandas>=2.0.0
 reportlab>=4.0.0
 

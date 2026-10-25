@@ -2471,6 +2471,38 @@ section[data-testid="stSidebar"] hr{border-color:rgba(255,255,255,.07);}
 .block-container>div{animation:entree .5s ease both;}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 @media (max-width:640px){.k-valeur{font-size:1.4rem}.hero h1{font-size:1.8rem}}
+
+/* ---------- Menu principal : grandes tuiles carrées (style écran d'accueil iPhone) ---------- */
+.st-key-tuiles{margin:6px 0 22px;}
+.st-key-tuiles [data-testid="stHorizontalBlock"]{gap:18px;}
+.st-key-tuiles [data-testid="stColumn"]{min-width:0;}
+.st-key-tuiles div[data-testid="stButton"] button{
+  --tc:#0A84FF;aspect-ratio:1/1;width:100%;min-height:118px;border-radius:28px!important;
+  display:flex;align-items:center;justify-content:center;text-align:center;padding:10px!important;
+  background:var(--glass)!important;border:1px solid var(--edge)!important;
+  box-shadow:0 1px 0 rgba(255,255,255,.16) inset,0 18px 34px -14px rgba(0,0,0,.8),
+             0 10px 26px -16px var(--tc)!important;
+  backdrop-filter:blur(18px);transition:transform .25s cubic-bezier(.2,.8,.2,1),box-shadow .25s ease!important;
+}
+.st-key-tuiles div[data-testid="stButton"] button p{white-space:pre-line;line-height:1.35;font-size:.82rem;font-weight:700;
+  color:#e8edf6;margin:0;}
+.st-key-tuiles div[data-testid="stButton"] button p::first-line{font-size:2.6rem;line-height:1.5;}
+.st-key-tuiles div[data-testid="stButton"] button:hover{transform:translateY(-6px) scale(1.04);filter:none;
+  box-shadow:0 1px 0 rgba(255,255,255,.22) inset,0 28px 46px -14px rgba(0,0,0,.85),0 0 34px -6px var(--tc)!important;}
+.st-key-tuiles div[data-testid="stButton"] button[kind="primary"],.st-key-tuiles div[data-testid="stButton"] button[data-testid="stBaseButton-primary"]{
+  background:linear-gradient(150deg,var(--tc),color-mix(in srgb,var(--tc) 55%,#000))!important;
+  border-color:rgba(255,255,255,.4)!important;
+  box-shadow:0 1px 0 rgba(255,255,255,.5) inset,0 -3px 0 rgba(0,0,0,.2) inset,
+             0 24px 44px -12px var(--tc),0 0 0 3px rgba(255,255,255,.12)!important;}
+.st-key-tuiles div[data-testid="stButton"] button[data-testid="stBaseButton-primary"] p{color:#fff;text-shadow:0 1px 6px rgba(0,0,0,.35);}
+.st-key-tuiles [data-testid="stColumn"]:nth-child(1) button{--tc:#0A84FF}
+.st-key-tuiles [data-testid="stColumn"]:nth-child(2) button{--tc:#30D158}
+.st-key-tuiles [data-testid="stColumn"]:nth-child(3) button{--tc:#FF9F0A}
+.st-key-tuiles [data-testid="stColumn"]:nth-child(4) button{--tc:#BF5AF2}
+.st-key-tuiles [data-testid="stColumn"]:nth-child(5) button{--tc:#64D2FF}
+.st-key-tuiles [data-testid="stColumn"]:nth-child(6) button{--tc:#FF453A}
+@media (max-width:760px){.st-key-tuiles div[data-testid="stButton"] button{min-height:92px}.st-key-tuiles div[data-testid="stButton"] button p{font-size:.68rem}
+  .st-key-tuiles div[data-testid="stButton"] button p::first-line{font-size:2rem}}
 #MainMenu,footer{visibility:hidden;}
 ::-webkit-scrollbar{width:10px;height:10px}
 ::-webkit-scrollbar-thumb{background:rgba(255,255,255,.14);border-radius:10px}
@@ -3474,20 +3506,28 @@ def main() -> None:
     st.title(f"🏦 {APP_NAME}")
     st.caption(f"Version {APP_VERSION} · rôle « {role} » · données isolées par entreprise")
 
-    onglets = st.tabs(["📊 Tableau de bord", "📒 Comptabilité", "🚢 Transit & Douanes",
-                       "🤖 IA & OCR", "👤 Portail client", "🛡️ Administration"])
-    with onglets[0]:
-        onglet_tableau_de_bord()
-    with onglets[1]:
-        onglet_comptabilite()
-    with onglets[2]:
-        onglet_transit()
-    with onglets[3]:
-        onglet_ia()
-    with onglets[4]:
-        onglet_portail_client()
-    with onglets[5]:
-        onglet_administration()
+    pages = [
+        ("📊", "Tableau\nde bord", onglet_tableau_de_bord),
+        ("📒", "Comptabilité", onglet_comptabilite),
+        ("🚢", "Transit\n& Douanes", onglet_transit),
+        ("🤖", "IA & OCR", onglet_ia),
+        ("👤", "Portail\nclient", onglet_portail_client),
+        ("🛡️", "Administration", onglet_administration),
+    ]
+    st.session_state.setdefault("page_active", 0)
+    try:
+        conteneur = st.container(key="tuiles")
+    except TypeError:  # anciennes versions de Streamlit : menu sans style carré
+        conteneur = st.container()
+    with conteneur:
+        colonnes = st.columns(len(pages))
+        for indice, (colonne, (icone, titre, _)) in enumerate(zip(colonnes, pages)):
+            actif = st.session_state["page_active"] == indice
+            if colonne.button(f"{icone}\n{titre}", key=f"tuile_{indice}", use_container_width=True,
+                              type="primary" if actif else "secondary"):
+                st.session_state["page_active"] = indice
+                st.rerun()
+    pages[st.session_state["page_active"]][2]()
 
     journaliser("session_consultation", "ui", role, "chargement de l'interface")
 
