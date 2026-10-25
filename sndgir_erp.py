@@ -681,7 +681,7 @@ CREATE TABLE IF NOT EXISTS fne_factures (
 
 
 from sndgir_export import bouton_export  # noqa: E402  (exports Excel / PDF)
-from sndgir_menu import (CSS_BARRE, CSS_SOUS_MENU, html_alerte_demo, html_audit, html_marque,  # noqa: E402
+from sndgir_menu import (CSS_BARRE, CSS_LEGER, CSS_SOUS_MENU, mode_leger, html_alerte_demo, html_audit, html_marque,  # noqa: E402
                          html_profil, sous_menu)
 import sndgir_suivi  # noqa: E402  (suivi des expéditions, crédit documentaire, prix de revient)
 
@@ -3094,7 +3094,7 @@ section[data-testid="stSidebar"] hr{border-color:rgba(255,255,255,.07);}
 
 def injecter_theme() -> None:
     st.markdown(CSS_THEME_3D, unsafe_allow_html=True)
-    st.markdown(f"<style>{CSS_SOUS_MENU}{CSS_BARRE}</style>", unsafe_allow_html=True)
+    st.markdown(f"<style>{CSS_SOUS_MENU}{CSS_BARRE}{CSS_LEGER if mode_leger() else ''}</style>", unsafe_allow_html=True)
 
 
 def carte_kpi(titre: str, valeur: str, sous_texte: str = "", niveau: str = "bleu") -> None:
@@ -3117,7 +3117,7 @@ def graphique_barres(df: pd.DataFrame, x: str, y: str, titre: str = ""):
     if df.empty:
         st.info("Aucune donnée à représenter.")
         return
-    if PLOTLY_OK:
+    if PLOTLY_OK and not mode_leger():
         figure = px.bar(df, x=x, y=y, title=titre, template="plotly_dark",
                         color_discrete_sequence=["#0A84FF"])
         figure.update_traces(marker_line_width=0, opacity=0.92)
@@ -3135,7 +3135,7 @@ def graphique_camembert(df: pd.DataFrame, noms: str, valeurs: str, titre: str = 
     if df.empty:
         st.info("Aucune donnée à représenter.")
         return
-    if PLOTLY_OK:
+    if PLOTLY_OK and not mode_leger():
         figure = px.pie(df, names=noms, values=valeurs, title=titre, hole=0.55,
                         template="plotly_dark")
         figure.update_traces(marker=dict(line=dict(color="#04060C", width=3)))
@@ -3220,6 +3220,8 @@ def barre_laterale() -> str:
             sndgir_retours.render_formulaire(connexion, journaliser, tenant_courant(),
                                              st.session_state.get("username", "—"), st.session_state.get("user_role", ""))
         with st.expander("⚙️ Réglages"):
+            st.toggle("Mode léger (connexion lente)", key="mode_leger",
+                      help="Moins d'effets visuels, pas de carte ni de graphiques lourds : l'application se charge plus vite.")
             st.text_input("Clé API Groq (session)", type="password", key="groq_api_key_input",
                           value=st.session_state.get("groq_api_key", ""))
             st.session_state["groq_api_key"] = st.session_state.get("groq_api_key_input", "")
@@ -4242,7 +4244,7 @@ def onglet_administration() -> None:
             st.error(message)
         journal_audit = lire_df(
             "SELECT ts, username, role, ip, action, entite, details FROM audit_logs"
-            " ORDER BY id DESC LIMIT 500")
+            f" ORDER BY id DESC LIMIT {100 if mode_leger() else 500}")
         st.dataframe(journal_audit, use_container_width=True)
         bouton_export(journal_audit, "piste_audit", "Piste d'audit")
     if onglet_taux:

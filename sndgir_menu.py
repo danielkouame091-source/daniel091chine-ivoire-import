@@ -136,3 +136,16 @@ def html_alerte_demo(comptes: list[str]) -> str:
     pastilles = "".join(f"<span>{_html.escape(str(c))}</span>" for c in comptes)
     return ('<div class="sb-alerte"><b>⚠️ Comptes de démonstration actifs</b><br>'
             f'{pastilles}<br>Changez ces mots de passe avant toute présentation : Administration → Utilisateurs.</div>')
+
+
+# ───────────────────────── Mode léger (connexion lente) ─────────────────────────
+CSS_LEGER = """
+/* Mode léger : plus aucun effet coûteux (flou, ombres, animations) */
+*,*::before,*::after{backdrop-filter:none!important;-webkit-backdrop-filter:none!important;box-shadow:none!important;
+  text-shadow:none!important;transition:none!important;animation:none!important;}
+"""
+
+
+def mode_leger() -> bool:
+    """Vrai si l'utilisateur a activé le mode léger (moins d'effets, pas de carte ni de graphiques lourds)."""
+    return bool(st.session_state.get("mode_leger", False))

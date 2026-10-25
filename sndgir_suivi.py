@@ -16,7 +16,7 @@ from datetime import datetime
 import pandas as pd
 import streamlit as st
 
-from sndgir_menu import sous_menu
+from sndgir_menu import mode_leger, sous_menu
 
 SCHEMA_SUIVI = """
 CREATE TABLE IF NOT EXISTS expeditions (
@@ -221,9 +221,12 @@ def render_suivi(lire_df, connexion, journaliser, exiger, tenant_id: int, userna
                     st.success("✅ La marchandise est arrivée dans la zone du port de destination.")
                 else:
                     st.info(f"Dernière position : {e['derniere_position']} le {e['derniere_date']} {e['dernier_lieu']}")
-                carte = pd.DataFrame({"lat": pos["lat"], "lon": pos["lon"]})
-                carte.loc[len(carte)] = [exp["dest_lat"], exp["dest_lon"]]
-                st.map(carte)
+                if mode_leger():
+                    st.caption("Mode léger : la carte est masquée. Désactivez-le dans ⚙️ Réglages pour la voir.")
+                else:
+                    carte = pd.DataFrame({"lat": pos["lat"], "lon": pos["lon"]})
+                    carte.loc[len(carte)] = [exp["dest_lat"], exp["dest_lon"]]
+                    st.map(carte)
                 st.dataframe(pos[["date_position", "lat", "lon", "lieu", "note", "saisi_par"]], hide_index=True,
                              use_container_width=True)
                 st.caption("Estimation à vol d'oiseau : la route maritime réelle est plus longue.")
