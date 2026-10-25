@@ -3066,7 +3066,8 @@ section[data-testid="stSidebar"] hr{border-color:rgba(255,255,255,.07);}
 .st-key-tuiles [data-testid="stColumn"]:nth-child(3) button{--tc:#FF9F0A}
 .st-key-tuiles [data-testid="stColumn"]:nth-child(4) button{--tc:#BF5AF2}
 .st-key-tuiles [data-testid="stColumn"]:nth-child(5) button{--tc:#64D2FF}
-.st-key-tuiles [data-testid="stColumn"]:nth-child(6) button{--tc:#FF453A}
+.st-key-tuiles [data-testid="stColumn"]:nth-child(6) button{--tc:#5E5CE6}
+.st-key-tuiles [data-testid="stColumn"]:nth-child(7) button{--tc:#FF453A}
 @media (max-width:760px){.st-key-tuiles div[data-testid="stButton"] button{min-height:92px}.st-key-tuiles div[data-testid="stButton"] button p{font-size:.68rem}
   .st-key-tuiles div[data-testid="stButton"] button p::first-line{font-size:2rem}}
 #MainMenu,footer{visibility:hidden;}
@@ -4251,6 +4252,17 @@ def ouvrir_session_directe() -> bool:
     return True
 
 
+def onglet_finai_ia() -> None:
+    """Analyse financière & IA (module séparé sndgir_finai.py ; l'ERP reste utilisable s'il manque)."""
+    try:
+        import sndgir_finai
+    except Exception as exc:
+        st.error("Le module d'analyse financière n'est pas disponible.")
+        st.code(str(exc))
+        return
+    sndgir_finai.onglet_finai(lire_df, tenant_courant(), exiger)
+
+
 def main() -> None:
     st.set_page_config(page_title=APP_NAME, page_icon="🏦", layout="wide",
                        initial_sidebar_state="expanded")
@@ -4276,6 +4288,7 @@ def main() -> None:
         ("📒", "Comptabilité", onglet_comptabilite),
         ("🚢", "Transit\n& Douanes", onglet_transit),
         ("🤖", "IA & OCR", onglet_ia),
+        ("🧠", "Analyse\nfinancière IA", onglet_finai_ia),
         ("👤", "Portail\nclient", onglet_portail_client),
         ("🛡️", "Administration", onglet_administration),
     ]

@@ -213,3 +213,9 @@ Sécurité ✓  Audit immuable ✓  Partie double ✓  Douanes ✓  Surestaries 
 OCR/IDP ✓  Transit & B/L ✓  Multi-tenant & RBAC ✓  PDF scellés ✓
 Conformité documentaire ✓  Cycle de vie du dossier ✓  Comptes & blocage ✓
 ```
+
+## Analyse financière & IA (nouvelle tuile 🧠)
+Dossier `finai/` + fichier `sndgir_finai.py`. Depuis votre grand livre : SIG, ratios, comparaison de normes,
+scénarios « Et si ? », anomalies (Benford + Isolation Forest), prévision de trésorerie, textes (NLP), score de
+solvabilité. Le bilan est reconstitué par approximation et les modèles apprennent sur des données simulées :
+résultats indicatifs, à valider par l'expert-comptable. Paquets : voir `requirements.txt`.
