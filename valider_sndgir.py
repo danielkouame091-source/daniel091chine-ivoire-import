@@ -366,6 +366,55 @@ def tester_comptes() -> None:
     _verifier(valide, f"Chaîne d'audit toujours intègre ({nb_lignes} entrées)")
 
 
+def tester_tarif_et_taxes() -> None:
+    print("\n— Tarif douanier & taxes spécifiques —")
+    csv = ("code_sh;designation;dd;unite\n"
+           "2203.00.00.00;TEST Bière;20;litre\n"
+           "8471.30.00.00;TEST Ordinateurs;5,0;unité\n"
+           "abc;ligne invalide;5;kg\n"
+           "9999.99.00.00;TEST DD hors tranche;12;kg\n")
+    bilan = erp.importer_tarif_csv(csv.encode("utf-8"))
+    _verifier(bilan["importees"] == 3 and bilan["ignorees"] == 1,
+              f"Import CSV : 3 lignes importées, 1 ignorée ({bilan['importees']}/{bilan['ignorees']})")
+    _verifier(bilan["hors_tranches"] == 1, "DD hors tranches signalé")
+    tarif = erp.chercher_tarif("2203.00.00.00")
+    _verifier(tarif is not None and float(tarif["dd"]) == 20.0, "Recherche tarif exacte (DD 20 %)")
+    _verifier(erp.chercher_tarif("2203.00") is not None, "Recherche par code partiel")
+    erp.importer_tarif_csv("code_sh;designation;dd;unite\n2203.00.00.00;TEST Biere;10;litre\n")
+    _verifier(float(erp.chercher_tarif("2203.00.00.00")["dd"]) == 10.0, "Ré-import = mise à jour")
+    try:
+        erp.normaliser_sh("12")
+        _verifier(False, "Code SH trop court refusé")
+    except ValueError:
+        _verifier(True, "Code SH trop court refusé")
+
+    erp.ajouter_taxe_specifique("2203", "TEST Droit d'accise", "MONTANT_PAR_UNITE", 100.0, "litre")
+    erp.ajouter_taxe_specifique("22", "TEST Taxe boissons", "POURCENT_CAF", 2.0)
+    taxes = erp.calculer_taxes_specifiques("2203.00.00.00", 1_000_000, 500)
+    _verifier(taxes["total"] == 50_000 + 20_000, f"Taxes : 500 × 100 + 2 % = {taxes['total']:,.0f}")
+    try:
+        erp.calculer_taxes_specifiques("2203.00.00.00", 1_000_000, 0)
+        _verifier(False, "Taxe par unité sans quantité refusée")
+    except ValueError:
+        _verifier(True, "Taxe par unité sans quantité refusée")
+    _verifier(erp.calculer_taxes_specifiques("8471.30.00.00", 1_000_000)["total"] == 0,
+              "Aucune taxe hors préfixe")
+
+    sans = erp.calculer_droits(1_000_000, 10.0)
+    avec = erp.calculer_droits(1_000_000, 10.0, autres_taxes=70_000)
+    _verifier(avec["tva"] > sans["tva"] and avec["total_droits_taxes"] > sans["total_droits_taxes"] + 70_000,
+              "Taxes spécifiques incluses dans la base de TVA")
+    susp = erp.calculer_droits(1_000_000, 10.0, regime="TR", autres_taxes=70_000)
+    _verifier(susp["total_droits_taxes"] == 0, "Régime suspendu : aucune taxe spécifique à payer")
+
+    for _, ligne in erp.lister_taxes_specifiques().iterrows():
+        if str(ligne["libelle"]).startswith("TEST"):
+            erp.supprimer_taxe_specifique(int(ligne["id"]))
+    _verifier(erp.lister_taxes_specifiques().empty or
+              not erp.lister_taxes_specifiques()["libelle"].astype(str).str.startswith("TEST").any(),
+              "Suppression des taxes de test")
+
+
 def main() -> int:
     print("═" * 62)
     print(f" VALIDATION FONCTIONNELLE — {erp.APP_NAME} v{erp.APP_VERSION}")
@@ -379,6 +428,7 @@ def main() -> int:
     tester_ocr()
     tester_transit()
     tester_conformite_dossier()
+    tester_tarif_et_taxes()
     tester_tenant()
     tester_comptes()
     tester_rbac_isolation()

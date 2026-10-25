@@ -39,6 +39,7 @@ déclaration officielle.
 from __future__ import annotations
 
 import base64
+import csv
 import hashlib
 import hmac
 import io
@@ -153,6 +154,21 @@ DOCUMENTS_DOSSIER = {
     "TRANSIT":     "Déclaration de transit (TI / TRIE)",
 }
 DOCUMENT_STATUTS = ("Reçu", "Exempté")
+
+# Tranches de droits de douane du Tarif Extérieur Commun (information, non bloquant).
+TRANCHES_DD = (0.0, 5.0, 10.0, 20.0, 35.0)
+
+MODES_TAXE_SPECIFIQUE = {
+    "POURCENT_CAF":      "Pourcentage de la valeur CAF",
+    "MONTANT_PAR_UNITE": "Montant fixe par unité (kg, litre…)",
+}
+
+# Modèle de fichier pour l'import du tarif (les lignes « EXEMPLE » sont à remplacer).
+MODELE_TARIF_CSV = (
+    "code_sh;designation;dd;unite\n"
+    "8471.30.00.00;EXEMPLE - Ordinateurs portables;5;unité\n"
+    "8517.13.00.00;EXEMPLE - Smartphones;20;unité\n"
+)
 
 # Canaux de sélectivité douanière (moteur hybride de risque)
 CANAUX = {
@@ -588,6 +604,25 @@ CREATE TABLE IF NOT EXISTS dossier_documents (
     UNIQUE(tenant_id, dossier_id, code),
     FOREIGN KEY(dossier_id) REFERENCES dossiers(id)
 );
+CREATE TABLE IF NOT EXISTS tarif_douanier (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tenant_id INTEGER NOT NULL,
+    code_sh TEXT NOT NULL,
+    designation TEXT,
+    dd REAL NOT NULL DEFAULT 0,
+    unite TEXT,
+    UNIQUE(tenant_id, code_sh)
+);
+CREATE TABLE IF NOT EXISTS taxes_specifiques (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tenant_id INTEGER NOT NULL,
+    prefixe_sh TEXT NOT NULL,
+    libelle TEXT NOT NULL,
+    mode TEXT NOT NULL,
+    valeur REAL NOT NULL,
+    unite TEXT,
+    UNIQUE(tenant_id, prefixe_sh, libelle)
+);
 """
 
 
@@ -604,6 +639,11 @@ def init_db() -> None:
 # Colonnes ajoutées après la première mise en production : la migration est
 # idempotente et s'applique sans perte de données aux bases déjà existantes.
 _MIGRATIONS_COLONNES = {
+    "dossiers": [
+        ("code_sh", "TEXT"),
+        ("quantite", "REAL DEFAULT 0"),
+        ("taxes_specifiques", "REAL DEFAULT 0"),
+    ],
     "communications": [
         ("email_destinataire", "TEXT"),
         ("statut_envoi", "TEXT DEFAULT 'Non envoyée'"),
@@ -1213,7 +1253,8 @@ def calculer_is(taux: float = TAUX_IS_DEFAUT) -> dict:
 # TRANSIT, IMPORT-EXPORT & DOUANES (contexte ivoirien)
 # ══════════════════════════════════════════════════════════════════════════════
 def calculer_droits(valeur_caf: float, dd_pct: float, regime: str = "C100",
-                    taux_tva: float = TAUX_TVA, taux_rs: float = TAUX_RS_PCT) -> dict:
+                    taux_tva: float = TAUX_TVA, taux_rs: float = TAUX_RS_PCT,
+                    autres_taxes: float = 0.0) -> dict:
     """Calcule les droits et taxes selon le régime douanier.
 
     Structure du calcul (régime C100, mise à la consommation) :
@@ -1221,7 +1262,9 @@ def calculer_droits(valeur_caf: float, dd_pct: float, regime: str = "C100",
       2. Redevance statistique (RS)  = valeur CAF × 1 %
       3. PC UEMOA                    = valeur CAF × 0,8 %
       4. PCC CEDEAO                  = valeur CAF × 0,5 %
-      5. TVA 18 %                    = (CAF + DD + RS + PC + PCC) × 18 %
+      5. TVA 18 %                    = (CAF + DD + RS + PC + PCC + autres taxes) × 18 %
+    « autres_taxes » : taxes spécifiques / accises propres au produit (voir
+    calculer_taxes_specifiques), incluses dans la base de la TVA.
     Les régimes E100 (export), AT (admission temporaire) et TR (transit) ne
     donnent lieu à aucun droit ni aucune TVA à payer (régimes suspensifs ou
     exonérés) : voir REGIMES_SUSPENDUS. Tous les taux restent modifiables et
@@ -1235,15 +1278,17 @@ def calculer_droits(valeur_caf: float, dd_pct: float, regime: str = "C100",
     rs = round(valeur_caf * taux_rs / 100.0 * facteur, 2)
     pc_uemoa = round(valeur_caf * PC_UEMOA_PCT / 100.0 * facteur, 2)
     pcc_cedeao = round(valeur_caf * PCC_CEDEAO_PCT / 100.0 * facteur, 2)
-    base_tva = round((valeur_caf + dd + rs + pc_uemoa + pcc_cedeao) * facteur, 2)
+    autres = round(max(float(autres_taxes), 0.0) * facteur, 2)
+    base_tva = round((valeur_caf + dd + rs + pc_uemoa + pcc_cedeao + autres) * facteur, 2)
     tva = round(base_tva * taux_tva / 100.0, 2)
-    total = round(dd + rs + pc_uemoa + pcc_cedeao + tva, 2)
+    total = round(dd + rs + pc_uemoa + pcc_cedeao + autres + tva, 2)
     return {
         "valeur_caf": round(valeur_caf, 2),
         "droits_douane": dd,
         "redevance_statistique": rs,
         "pc_uemoa": pc_uemoa,
         "pcc_cedeao": pcc_cedeao,
+        "autres_taxes": autres,
         "base_tva": base_tva,
         "tva": tva,
         "total_droits_taxes": total,
@@ -1435,6 +1480,203 @@ def apurer_manifeste(manifeste_id: int) -> None:
 
 
 # ─── Dossiers de transit ──────────────────────────────────────────────────────
+# ─── Tarif douanier (codes SH) & taxes spécifiques ────────────────────────────
+def normaliser_sh(code: str) -> str:
+    """Réduit un code SH à ses chiffres (6 à 10). Lève ValueError s'il est invalide."""
+    chiffres = re.sub(r"\D", "", str(code or ""))
+    if not 6 <= len(chiffres) <= 10:
+        raise ValueError("Code SH invalide : 6 à 10 chiffres attendus (ex. 8471.30.00.00).")
+    return chiffres
+
+
+def formater_sh(chiffres: str) -> str:
+    """8471300000 → 8471.30.00.00"""
+    morceaux = [chiffres[:4], chiffres[4:6], chiffres[6:8], chiffres[8:10]]
+    return ".".join(morceau for morceau in morceaux if morceau)
+
+
+def chercher_tarif(code_sh: str) -> dict | None:
+    """Ligne du tarif du tenant pour un code SH.
+
+    Ordre : ligne exacte, sinon la ligne la plus précise qui contient le code
+    saisi, sinon l'unique sous-position. None si absente ou ambiguë.
+    """
+    chiffres = normaliser_sh(code_sh)
+    with connexion() as conn:
+        lignes = conn.execute(
+            "SELECT code_sh, designation, dd, unite FROM tarif_douanier WHERE tenant_id=?"
+            " AND (code_sh=? OR ? LIKE code_sh || '%' OR code_sh LIKE ? || '%')",
+            (tenant_courant(), chiffres, chiffres, chiffres),
+        ).fetchall()
+    for ligne in lignes:
+        if ligne["code_sh"] == chiffres:
+            return dict(ligne)
+    parents = [ligne for ligne in lignes if chiffres.startswith(ligne["code_sh"])]
+    if parents:
+        return dict(max(parents, key=lambda ligne: len(ligne["code_sh"])))
+    return dict(lignes[0]) if len(lignes) == 1 else None
+
+
+def rechercher_tarif(texte: str = "", limite: int = 200) -> pd.DataFrame:
+    """Recherche dans le tarif : début de code SH si des chiffres sont saisis, sinon désignation."""
+    texte = str(texte or "").strip()
+    chiffres = re.sub(r"\D", "", texte)
+    if chiffres:
+        filtre, motif = "code_sh LIKE ?", chiffres + "%"
+    else:
+        filtre, motif = "designation LIKE ?", f"%{texte}%"
+    tarif = lire_df(
+        f"SELECT code_sh, designation, dd, unite FROM tarif_douanier WHERE tenant_id=?"
+        f" AND {filtre} ORDER BY code_sh LIMIT ?", (tenant_courant(), motif, limite),
+    )
+    if not tarif.empty:
+        tarif.insert(0, "code", tarif["code_sh"].map(formater_sh))
+    return tarif
+
+
+_ALIAS_COLONNES = {
+    "code_sh": ("code_sh", "code", "sh", "hs", "hs_code", "position", "nomenclature"),
+    "designation": ("designation", "désignation", "libelle", "libellé", "description", "produit"),
+    "dd": ("dd", "droit", "droits", "taux_dd", "droit_de_douane", "taux"),
+    "unite": ("unite", "unité", "unit"),
+}
+
+
+def _nombre(valeur) -> float:
+    """Convertit « 5 », « 5,5 » ou « 20 % » en nombre."""
+    texte = str(valeur or "").replace("%", "").replace(" ", "").replace(" ", "")
+    try:
+        return float(texte.replace(",", "."))
+    except ValueError as exc:
+        raise ValueError("taux illisible") from exc
+
+
+def importer_tarif_csv(contenu) -> dict:
+    """Importe un tarif douanier au format CSV (séparateur « ; » ou « , »).
+
+    Colonnes obligatoires : code_sh et dd (en %). Facultatives : designation, unite.
+    Les lignes valides sont enregistrées (mise à jour si le code existe déjà) ; les
+    lignes invalides sont ignorées et listées. Vérifiez toujours les taux avec le
+    tarif officiel avant d'importer.
+    """
+    texte = (contenu.decode("utf-8-sig", errors="replace")
+             if isinstance(contenu, (bytes, bytearray)) else str(contenu))
+    lignes_texte = texte.splitlines()
+    if not lignes_texte:
+        raise ValueError("Fichier vide.")
+    separateur = ";" if lignes_texte[0].count(";") >= lignes_texte[0].count(",") else ","
+    lecteur = csv.DictReader(io.StringIO(texte), delimiter=separateur)
+    entetes = {re.sub(r"\s+", "_", (nom or "").strip().lower()): nom
+               for nom in (lecteur.fieldnames or [])}
+    colonnes = {cible: next((entetes[alias] for alias in alias_possibles if alias in entetes), None)
+                for cible, alias_possibles in _ALIAS_COLONNES.items()}
+    if not colonnes["code_sh"] or not colonnes["dd"]:
+        raise ValueError("Colonnes obligatoires absentes : code_sh et dd (voir le modèle CSV).")
+
+    valides, erreurs, hors_tranches = [], [], 0
+    for numero, ligne in enumerate(lecteur, start=2):
+        if not any(str(valeur or "").strip() for valeur in ligne.values()):
+            continue
+        try:
+            code = normaliser_sh(ligne.get(colonnes["code_sh"]))
+            dd = _nombre(ligne.get(colonnes["dd"]))
+            if not 0 <= dd <= 100:
+                raise ValueError("DD hors de 0–100 %")
+        except ValueError as exc:
+            erreurs.append(f"Ligne {numero} : {exc}")
+            continue
+        designation = str(ligne.get(colonnes["designation"]) or "").strip() if colonnes["designation"] else ""
+        unite = str(ligne.get(colonnes["unite"]) or "").strip() if colonnes["unite"] else ""
+        hors_tranches += dd not in TRANCHES_DD
+        valides.append((tenant_courant(), code, designation, dd, unite))
+    with connexion() as conn:
+        conn.executemany(
+            "INSERT INTO tarif_douanier (tenant_id, code_sh, designation, dd, unite)"
+            " VALUES (?,?,?,?,?) ON CONFLICT(tenant_id, code_sh) DO UPDATE SET"
+            " designation=excluded.designation, dd=excluded.dd, unite=excluded.unite", valides,
+        )
+    journaliser("tarif_import", "tarif_douanier", "",
+                f"importees={len(valides)}; ignorees={len(erreurs)}")
+    return {"importees": len(valides), "ignorees": len(erreurs),
+            "hors_tranches": int(hors_tranches), "erreurs": erreurs[:20]}
+
+
+def ajouter_taxe_specifique(prefixe_sh: str, libelle: str, mode: str, valeur: float,
+                            unite: str = "") -> None:
+    """Ajoute (ou met à jour) une taxe spécifique / accise applicable à un préfixe de code SH."""
+    prefixe = re.sub(r"\D", "", str(prefixe_sh or ""))
+    if not 2 <= len(prefixe) <= 10:
+        raise ValueError("Préfixe SH invalide : 2 à 10 chiffres (ex. 22 ou 2203).")
+    if not str(libelle or "").strip():
+        raise ValueError("Le libellé est obligatoire.")
+    if mode not in MODES_TAXE_SPECIFIQUE:
+        raise ValueError("Mode de calcul inconnu.")
+    if valeur < 0 or (mode == "POURCENT_CAF" and valeur > 1000):
+        raise ValueError("Valeur de taxe invalide.")
+    if mode == "MONTANT_PAR_UNITE" and not str(unite or "").strip():
+        raise ValueError("Précisez l'unité (kg, litre, unité…).")
+    with connexion() as conn:
+        conn.execute(
+            "INSERT INTO taxes_specifiques (tenant_id, prefixe_sh, libelle, mode, valeur, unite)"
+            " VALUES (?,?,?,?,?,?) ON CONFLICT(tenant_id, prefixe_sh, libelle) DO UPDATE SET"
+            " mode=excluded.mode, valeur=excluded.valeur, unite=excluded.unite",
+            (tenant_courant(), prefixe, libelle.strip(), mode, float(valeur), str(unite).strip()),
+        )
+    journaliser("taxe_specifique_maj", "taxes_specifiques", prefixe,
+                f"{libelle.strip()}; {mode}; {valeur}")
+
+
+def supprimer_taxe_specifique(taxe_id: int) -> None:
+    with connexion() as conn:
+        cur = conn.execute("DELETE FROM taxes_specifiques WHERE id=? AND tenant_id=?",
+                           (taxe_id, tenant_courant()))
+        if cur.rowcount == 0:
+            raise ValueError("Taxe introuvable.")
+    journaliser("taxe_specifique_suppression", "taxes_specifiques", str(taxe_id), "")
+
+
+def lister_taxes_specifiques() -> pd.DataFrame:
+    return lire_df(
+        "SELECT id, prefixe_sh, libelle, mode, valeur, unite FROM taxes_specifiques"
+        " WHERE tenant_id=? ORDER BY prefixe_sh, libelle", (tenant_courant(),),
+    )
+
+
+def calculer_taxes_specifiques(code_sh: str, valeur_caf: float, quantite: float = 0.0) -> dict:
+    """Taxes spécifiques / accises applicables à un code SH (règles du tenant).
+
+    Une règle s'applique si le code SH commence par son préfixe. Une taxe « par unité »
+    exige une quantité > 0 (sinon ValueError : mieux vaut refuser que sous-facturer).
+    Retourne {"lignes": [{libelle, montant, detail}], "total"}.
+    """
+    chiffres = re.sub(r"\D", "", str(code_sh or ""))
+    lignes: list[dict] = []
+    if chiffres:
+        for _, regle in lister_taxes_specifiques().iterrows():
+            if not chiffres.startswith(str(regle["prefixe_sh"])):
+                continue
+            valeur = float(regle["valeur"])
+            if regle["mode"] == "POURCENT_CAF":
+                montant, detail = round(valeur_caf * valeur / 100.0, 2), f"{valeur:g} % de la CAF"
+            else:
+                if float(quantite or 0) <= 0:
+                    raise ValueError(f"Quantité obligatoire ({regle['unite']}) : la taxe "
+                                     f"« {regle['libelle']} » s'applique à ce code SH.")
+                montant = round(float(quantite) * valeur, 2)
+                detail = f"{float(quantite):g} × {valeur:g} FCFA / {regle['unite']}"
+            lignes.append({"libelle": regle["libelle"], "montant": montant, "detail": detail})
+    return {"lignes": lignes, "total": round(sum(ligne["montant"] for ligne in lignes), 2)}
+
+
+def _code_sh_article(article: str) -> str:
+    """Code SH (chiffres) de l'article de la base tarifaire du tenant, ou chaîne vide."""
+    with connexion() as conn:
+        ligne = conn.execute("SELECT sh FROM articles WHERE tenant_id=? AND nom=?",
+                             (tenant_courant(), article)).fetchone()
+    chiffres = re.sub(r"\D", "", str(ligne["sh"]) if ligne and ligne["sh"] else "")
+    return chiffres if 6 <= len(chiffres) <= 10 else ""
+
+
 def taux_dd_reference(article: str) -> float | None:
     """Taux de DD de référence de l'article dans la base tarifaire du tenant (ou None)."""
     with connexion() as conn:
@@ -1447,14 +1689,17 @@ def taux_dd_reference(article: str) -> float | None:
 def creer_dossier(reference: str, client: str, bl: str, article: str, regime: str,
                   fob_xof: float, fret_xof: float, assurance_xof: float, dd_pct: float,
                   email: str = "", telephone: str = "",
-                  fournisseur_nouveau: bool = True, marchandise_sensible: bool = False) -> dict:
+                  fournisseur_nouveau: bool = True, marchandise_sensible: bool = False,
+                  code_sh: str = "", quantite: float = 0.0) -> dict:
     """Crée un dossier de transit : calcule CAF, droits, sélectivité et total.
 
-    Le taux de DD déclaré est comparé au taux de référence de la base tarifaire
-    pour alimenter le moteur de sélectivité des risques. Retourne le détail du
-    calcul (ventilation des droits + canal de risque). Lève ValueError si les
-    données sont invalides (référence vide, montant négatif, régime inconnu,
-    référence déjà utilisée).
+    Le taux de DD déclaré est comparé au taux de référence (tarif douanier importé
+    pour le code SH, sinon base des articles) pour alimenter le moteur de sélectivité
+    des risques. Les taxes spécifiques du code SH (code saisi, sinon celui de
+    l'article) sont ajoutées ; une taxe « par unité » exige la quantité. Retourne le
+    détail du calcul. Lève ValueError si les données sont invalides (référence vide,
+    montant négatif, régime inconnu, code SH invalide, quantité manquante, référence
+    déjà utilisée).
     """
     if not str(reference).strip() or not str(client).strip():
         raise ValueError("La référence et le client sont obligatoires.")
@@ -1463,8 +1708,15 @@ def creer_dossier(reference: str, client: str, bl: str, article: str, regime: st
     if min(fob_xof, fret_xof, assurance_xof) < 0 or not 0 <= dd_pct <= 100:
         raise ValueError("Montants négatifs ou taux de DD hors de 0–100 % non autorisés.")
     valeur_caf = round(fob_xof + fret_xof + assurance_xof, 2)
-    droits = calculer_droits(valeur_caf, dd_pct, regime)
-    dd_reference = taux_dd_reference(article)
+    if float(quantite or 0) < 0:
+        raise ValueError("La quantité ne peut pas être négative.")
+    code_effectif = normaliser_sh(code_sh) if str(code_sh or "").strip() else _code_sh_article(article)
+    tarif = chercher_tarif(code_effectif) if code_effectif else None
+    # Export, admission temporaire et transit : aucune taxe à l'entrée, donc pas de quantité exigée.
+    taxes = ({"lignes": [], "total": 0.0} if regime in REGIMES_SUSPENDUS
+             else calculer_taxes_specifiques(code_effectif, valeur_caf, quantite))
+    droits = calculer_droits(valeur_caf, dd_pct, regime, autres_taxes=taxes["total"])
+    dd_reference = float(tarif["dd"]) if tarif else taux_dd_reference(article)
     risque = scorer_risque(valeur_caf, dd_pct, dd_pct if dd_reference is None else dd_reference,
                            fournisseur_nouveau=fournisseur_nouveau,
                            marchandise_sensible=marchandise_sensible)
@@ -1475,11 +1727,13 @@ def creer_dossier(reference: str, client: str, bl: str, article: str, regime: st
                 "INSERT INTO dossiers (tenant_id, reference, date, client, bl, article, regime,"
                 " fob_xof, fret_xof, assurance_xof, valeur_caf_xof, droits_douane, tva,"
                 " total_facture, solde_du, statut, canal_risque, score_risque, email, telephone,"
-                " created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                " created_at, code_sh, quantite, taxes_specifiques)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (tenant_courant(), reference.strip(), date.today().strftime("%Y-%m-%d"), client, bl,
                  article, regime, fob_xof, fret_xof, assurance_xof, valeur_caf,
                  droits["total_droits_taxes"], droits["tva"], total_facture, total_facture,
-                 "En cours", risque["canal"], risque["score"], email, telephone, maintenant()),
+                 "En cours", risque["canal"], risque["score"], email, telephone, maintenant(),
+                 code_effectif, float(quantite or 0), droits["autres_taxes"]),
             )
             dossier_id = cur.lastrowid
     except sqlite3.IntegrityError as exc:
@@ -1487,7 +1741,8 @@ def creer_dossier(reference: str, client: str, bl: str, article: str, regime: st
     journaliser("dossier_creation", "dossiers", str(dossier_id),
                 f"reference={reference}; canal={risque['canal']}; score={risque['score']}")
     return {"dossier_id": dossier_id, "droits": droits, "risque": risque,
-            "total_facture": total_facture}
+            "total_facture": total_facture, "taxes": taxes, "code_sh": code_effectif,
+            "tarif": tarif}
 
 
 def lister_dossiers() -> pd.DataFrame:
@@ -2361,10 +2616,9 @@ def onglet_transit() -> None:
     if not exiger("transit.view"):
         return
     st.subheader("🚢 Transit, Import-Export & Douanes")
-    onglet_dossiers, onglet_calcul, onglet_manifestes, onglet_surestaries, onglet_documents = (
-        st.tabs(["Dossiers", "Calculateur douanier", "Manifestes & B/L",
-                 "Surestaries", "Documents PDF"])
-    )
+    (onglet_dossiers, onglet_calcul, onglet_manifestes, onglet_surestaries, onglet_documents,
+     onglet_tarif) = st.tabs(["Dossiers", "Calculateur douanier", "Manifestes & B/L",
+                              "Surestaries", "Documents PDF", "Tarif & taxes"])
 
     with onglet_dossiers:
         if exiger("transit.creer"):
@@ -2389,6 +2643,10 @@ def onglet_transit() -> None:
                                      if not articles.empty else 20.0)
                         dd_pct = st.number_input("Taux DD (%)", value=dd_defaut, min_value=0.0,
                                                  max_value=100.0)
+                        code_sh = st.text_input("Code SH (facultatif)",
+                                                placeholder="8471.30.00.00 — vide : code de l'article")
+                        quantite = st.number_input("Quantité taxable (kg, litres, unités)",
+                                                   min_value=0.0, step=1.0)
                     with colonnes[2]:
                         fob = st.number_input("Valeur FOB (FCFA)", min_value=0.0, step=100_000.0)
                         fret = st.number_input("Fret (FCFA)", min_value=0.0, step=10_000.0)
@@ -2404,7 +2662,8 @@ def onglet_transit() -> None:
                     try:
                         resultat = creer_dossier(reference, client, bl, str(article), regime, fob,
                                                  fret, assurance, dd_pct, email, telephone,
-                                                 fournisseur_nouveau, sensible)
+                                                 fournisseur_nouveau, sensible,
+                                                 code_sh=code_sh, quantite=quantite)
                     except ValueError as exc:
                         st.error(str(exc))
                     else:
@@ -2412,6 +2671,12 @@ def onglet_transit() -> None:
                                    f"{resultat['total_facture']:,.0f} FCFA.")
                         if resultat["droits"]["suspendu"]:
                             st.info(resultat["droits"]["note_regime"])
+                        if resultat["tarif"]:
+                            st.caption(f"Tarif {formater_sh(resultat['tarif']['code_sh'])} : "
+                                       f"DD de référence {float(resultat['tarif']['dd']):g} %")
+                        for taxe in resultat["taxes"]["lignes"]:
+                            st.caption(f"Taxe spécifique « {taxe['libelle']} » : "
+                                       f"{taxe['montant']:,.0f} FCFA ({taxe['detail']})")
                         st.markdown(
                             f"Canal de sélectivité : "
                             f"{badge_canal(resultat['risque']['canal'])} "
@@ -2502,7 +2767,22 @@ def onglet_transit() -> None:
         with colonnes[3]:
             tva_simule = st.number_input("TVA (%)", value=TAUX_TVA, min_value=0.0, max_value=30.0,
                                          key="calc_tva")
-        calcul = calculer_droits(valeur_caf, dd_simule, regime_simule, tva_simule)
+        colonnes_taxes = st.columns(2)
+        with colonnes_taxes[0]:
+            code_simule = st.text_input("Code SH (pour les taxes spécifiques, facultatif)",
+                                        key="calc_sh")
+        with colonnes_taxes[1]:
+            quantite_simulee = st.number_input("Quantité taxable (kg, litres, unités)",
+                                               min_value=0.0, key="calc_qte")
+        taxes_simulees = {"lignes": [], "total": 0.0}
+        if code_simule.strip() and regime_simule not in REGIMES_SUSPENDUS:
+            try:
+                taxes_simulees = calculer_taxes_specifiques(code_simule, valeur_caf,
+                                                            quantite_simulee)
+            except ValueError as exc:
+                st.error(str(exc))
+        calcul = calculer_droits(valeur_caf, dd_simule, regime_simule, tva_simule,
+                                 autres_taxes=taxes_simulees["total"])
         if calcul["suspendu"]:
             st.info(calcul["note_regime"])
         st.dataframe(pd.DataFrame([
@@ -2513,6 +2793,8 @@ def onglet_transit() -> None:
              "Montant": calcul["pc_uemoa"]},
             {"Rubrique": f"Prélèvement CEDEAO ({PCC_CEDEAO_PCT:g} %)",
              "Montant": calcul["pcc_cedeao"]},
+            *[{"Rubrique": f"Taxe spécifique : {taxe['libelle']}", "Montant": taxe["montant"]}
+              for taxe in taxes_simulees["lignes"]],
             {"Rubrique": f"TVA ({tva_simule:.0f} %) sur {calcul['base_tva']:,.0f}",
              "Montant": calcul["tva"]},
             {"Rubrique": "TOTAL DROITS & TAXES", "Montant": calcul["total_droits_taxes"]},
@@ -2687,6 +2969,94 @@ def onglet_transit() -> None:
                             st.rerun()
                         except ErreurComptable as exc:
                             st.error(str(exc))
+
+    with onglet_tarif:
+        peut_gerer = a_permission(st.session_state.get("user_role", ""), "tarif.gerer")
+        st.caption("Recherche par début de code SH (chiffres) ou par désignation (texte).")
+        recherche = st.text_input("Recherche dans le tarif", key="tarif_recherche")
+        resultats = rechercher_tarif(recherche)
+        if resultats.empty:
+            st.info("Aucune ligne dans le tarif."
+                    + (" Importez votre tarif ci-dessous." if peut_gerer
+                       else " Demandez à l'administrateur de l'importer."))
+        else:
+            st.dataframe(resultats[["code", "designation", "dd", "unite"]],
+                         use_container_width=True, hide_index=True)
+            st.caption(f"{len(resultats)} ligne(s) affichée(s) (200 au maximum).")
+
+        st.markdown("##### Taxes spécifiques / accises")
+        taxes_liste = lister_taxes_specifiques()
+        if taxes_liste.empty:
+            st.caption("Aucune taxe spécifique définie : seuls DD, redevance statistique, "
+                       "prélèvements et TVA sont calculés.")
+        else:
+            st.dataframe(taxes_liste.assign(mode=taxes_liste["mode"].map(MODES_TAXE_SPECIFIQUE))
+                         [["prefixe_sh", "libelle", "mode", "valeur", "unite"]],
+                         use_container_width=True, hide_index=True)
+
+        if peut_gerer:
+            st.markdown("##### Importer le tarif douanier (CSV)")
+            st.caption("Colonnes : code_sh, designation, dd (en %), unite. Séparateur « ; » ou « , ». "
+                       "Exportez le tarif officiel, adaptez les colonnes puis importez. "
+                       "Les lignes existantes sont mises à jour.")
+            st.download_button("⬇️ Modèle de fichier CSV", MODELE_TARIF_CSV.encode("utf-8-sig"),
+                               "modele_tarif_douanier.csv", "text/csv")
+            fichier = st.file_uploader("Fichier CSV du tarif", type=["csv"], key="tarif_csv")
+            if fichier is not None and st.button("Importer le fichier", key="tarif_importer"):
+                try:
+                    bilan = importer_tarif_csv(fichier.getvalue())
+                except ValueError as exc:
+                    st.error(str(exc))
+                else:
+                    st.success(f"{bilan['importees']} ligne(s) importée(s), "
+                               f"{bilan['ignorees']} ignorée(s).")
+                    if bilan["hors_tranches"]:
+                        st.warning(f"{bilan['hors_tranches']} ligne(s) ont un DD hors des tranches "
+                                   f"habituelles {', '.join(f'{t:g}' for t in TRANCHES_DD)} % : "
+                                   "à vérifier.")
+                    for erreur in bilan["erreurs"]:
+                        st.caption(erreur)
+
+            st.markdown("##### Ajouter une taxe spécifique / accise")
+            with st.form("form_taxe_specifique", clear_on_submit=True):
+                colonnes_taxe = st.columns(5)
+                with colonnes_taxe[0]:
+                    prefixe = st.text_input("Préfixe SH", placeholder="ex. 2203")
+                with colonnes_taxe[1]:
+                    libelle_taxe = st.text_input("Libellé")
+                with colonnes_taxe[2]:
+                    mode_taxe = st.selectbox("Calcul", list(MODES_TAXE_SPECIFIQUE.keys()),
+                                             format_func=lambda cle: MODES_TAXE_SPECIFIQUE[cle])
+                with colonnes_taxe[3]:
+                    valeur_taxe = st.number_input("Valeur (% ou FCFA / unité)", min_value=0.0)
+                with colonnes_taxe[4]:
+                    unite_taxe = st.text_input("Unité", placeholder="kg, litre…")
+                ajout = st.form_submit_button("Enregistrer la taxe", use_container_width=True)
+            if ajout:
+                try:
+                    ajouter_taxe_specifique(prefixe, libelle_taxe, mode_taxe, valeur_taxe,
+                                            unite_taxe)
+                except ValueError as exc:
+                    st.error(str(exc))
+                else:
+                    st.success("Taxe enregistrée.")
+                    st.rerun()
+            if not taxes_liste.empty:
+                colonnes_sup = st.columns([3, 1])
+                with colonnes_sup[0]:
+                    a_supprimer = st.selectbox(
+                        "Supprimer une taxe", taxes_liste["id"].tolist(),
+                        format_func=lambda cle: str(
+                            taxes_liste.loc[taxes_liste["id"] == cle, "libelle"].iloc[0]))
+                with colonnes_sup[1]:
+                    st.write("")
+                    if st.button("Supprimer", key="taxe_supprimer"):
+                        try:
+                            supprimer_taxe_specifique(int(a_supprimer))
+                        except ValueError as exc:
+                            st.error(str(exc))
+                        else:
+                            st.rerun()
 
 
 def onglet_ia() -> None:

@@ -18,7 +18,7 @@ pip install -r requirements.txt
 # 2. Lancer l'application (base SQLite auto-créée et peuplée au 1er démarrage)
 streamlit run sndgir_erp.py
 
-# 3. Valider le cœur métier (52 contrôles, sans Streamlit)
+# 3. Valider le cœur métier (sans Streamlit)
 python3 valider_sndgir.py
 ```
 
@@ -90,6 +90,12 @@ Le cœur applicatif tient dans un **bloc Python unique et exécutable** :
   - **Prélèvement Communautaire CEDEAO** (0,5 %) ;
   - **TVA 18 %** assise sur (CAF + DD + RS + PC + PCC) ;
   - les régimes `E100`, `AT` et `TR` ne donnent lieu à **aucun droit ni TVA** à payer.
+- **Tarif douanier à 10 chiffres** : importez votre tarif (fichier CSV `code_sh;designation;dd;unite`)
+  depuis l'onglet **Transit → Tarif & taxes**. Dans un dossier, le code SH renseigné fournit
+  automatiquement le taux de DD de référence. Aucun taux officiel n'est écrit dans le code.
+- **Taxes spécifiques / accises** par produit : règles configurables par préfixe SH, soit en
+  % de la CAF, soit en montant par unité (kg, litre…). Elles s'ajoutent aux droits et entrent
+  dans la base de la TVA (selon les sources secondaires consultées ; à confirmer).
 - **Conformité documentaire du dossier** : pièces obligatoires selon le régime
   (facture, B/L, colisage, **FDI**, **BSC**, **Certificat de Conformité** dès 1 000 000 FCFA
   de FOB, déclaration en douane…). Le CdC peut être déclaré « Exempté » avec motif.
@@ -137,7 +143,7 @@ Le cœur applicatif tient dans un **bloc Python unique et exécutable** :
 
 ```
 sndgir_erp.py        Application complète (bloc unique exécutable, ~2 440 lignes)
-valider_sndgir.py    Harnais de validation fonctionnelle (90 contrôles)
+valider_sndgir.py    Harnais de validation fonctionnelle (101 contrôles)
 requirements.txt     Dépendances Python
 sndgir_erp.db        Base SQLite (créée automatiquement, ignorée par Git)
 ```
@@ -153,8 +159,8 @@ PostgreSQL ; le moteur métier de `sndgir_erp.py` est transposable via SQLAlchem
 - Les **taux par défaut** (TVA 18 %, redevance statistique 1 %, IS/BIC 25 %,
   PC UEMOA 0,8 %, PCC CEDEAO 0,5 %) reflètent le régime général le plus courant en
   Côte d'Ivoire mais sont **indicatifs** : à confirmer avec le tarif de la Douane en
-  vigueur (le taux du PC UEMOA n'a pas été revérifié). Les droits d'accises et taxes
-  spécifiques par produit ne sont pas modélisés.
+  vigueur (le taux du PC UEMOA n'a pas été revérifié). Les accises et taxes spécifiques
+  sont **à configurer par vous** (aucun taux n'est préchargé), tout comme le tarif douanier.
 - Les **régimes E100 / AT / TR** sont modélisés par suspension / exonération totale
   (droits et TVA) ; les cas particuliers (contingents, garanties, destinations
   privilégiées) doivent être affinés selon le tarif douanier en vigueur.
@@ -173,7 +179,7 @@ PostgreSQL ; le moteur métier de `sndgir_erp.py` est transposable via SQLAlchem
 ## ✅ État de validation
 
 ```
-90 validations · 0 échec   (python3 valider_sndgir.py)
+101 validations · 0 échec   (python3 valider_sndgir.py)
 Sécurité ✓  Audit immuable ✓  Partie double ✓  Douanes ✓  Surestaries ✓
 OCR/IDP ✓  Transit & B/L ✓  Multi-tenant & RBAC ✓  PDF scellés ✓
 Conformité documentaire ✓  Cycle de vie du dossier ✓  Comptes & blocage ✓
