@@ -123,6 +123,9 @@ TAUX_TVA = 18.0                 # TVA Côte d'Ivoire (taux normal)
 PC_UEMOA_PCT = 0.8              # Prélèvement Communautaire UEMOA
 PCC_CEDEAO_PCT = 0.5           # Prélèvement Communautaire CEDEAO
 TAUX_IS_DEFAUT = 25.0          # Impôt sur les Sociétés / BIC (régime réel normal)
+TAUX_RS_PCT = 1.0              # Redevance Statistique (≈ 1 % de la valeur CAF)
+# Contrôle de conformité des importations (Certificat de Conformité) : seuil FOB.
+SEUIL_CDC_FOB_XOF = 1_000_000
 
 REGIMES_DOUANIERS = {
     "C100": "Mise à la consommation (régime général)",
@@ -130,6 +133,26 @@ REGIMES_DOUANIERS = {
     "AT":   "Admission temporaire",
     "TR":   "Transit / Transbordement",
 }
+
+# Régimes où aucun droit ni aucune TVA n'est exigible à l'entrée du dossier.
+REGIMES_SUSPENDUS = {
+    "E100": "Exportation : droits et TVA non exigibles",
+    "AT":   "Admission temporaire : droits et taxes suspendus (garantie à constituer)",
+    "TR":   "Transit : droits et taxes suspendus jusqu'à la destination",
+}
+
+# Pièces d'un dossier de transit (liste de référence à adapter par le transitaire).
+DOCUMENTS_DOSSIER = {
+    "FACTURE":     "Facture commerciale",
+    "BL":          "Connaissement (B/L) ou LTA",
+    "COLISAGE":    "Liste de colisage",
+    "FDI":         "FDI (Fiche de Déclaration d'Importation)",
+    "BSC":         "BSC (Bordereau de Suivi des Cargaisons, OIC)",
+    "CDC":         "Certificat de Conformité (CdC)",
+    "DECLARATION": "Déclaration en douane enregistrée",
+    "TRANSIT":     "Déclaration de transit (TI / TRIE)",
+}
+DOCUMENT_STATUTS = ("Reçu", "Exempté")
 
 # Canaux de sélectivité douanière (moteur hybride de risque)
 CANAUX = {
@@ -146,6 +169,15 @@ STATUTS_DOSSIER = [
     "Bon à Enlever (BAE) Émis",
     "Livré au Client",
 ]
+STATUT_BAE = "Bon à Enlever (BAE) Émis"
+
+# Sécurité des comptes
+MOT_DE_PASSE_MIN = 10
+CONNEXIONS_ECHECS_MAX = 5       # tentatives échouées tolérées…
+CONNEXIONS_FENETRE_MIN = 15     # …sur cette fenêtre (minutes) avant blocage temporaire
+MOTS_DE_PASSE_DEMO = {          # comptes créés au premier lancement (à changer)
+    "admin": "admin123", "expert": "expert123", "collab": "collab123", "auditeur": "audit123",
+}
 
 ROLES = {
     "Administrateur Système":        "Accès total (gestion tenants, utilisateurs, clés)",
@@ -544,6 +576,18 @@ CREATE TABLE IF NOT EXISTS releves_bancaires (
     ecriture_id INTEGER,
     importe_le TEXT
 );
+CREATE TABLE IF NOT EXISTS dossier_documents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tenant_id INTEGER NOT NULL,
+    dossier_id INTEGER NOT NULL,
+    code TEXT NOT NULL,
+    reference TEXT,
+    statut TEXT NOT NULL DEFAULT 'Reçu',
+    created_by TEXT,
+    created_at TEXT,
+    UNIQUE(tenant_id, dossier_id, code),
+    FOREIGN KEY(dossier_id) REFERENCES dossiers(id)
+);
 """
 
 
@@ -791,8 +835,77 @@ def creer_utilisateur(tenant_id: int, username: str, mot_de_passe: str, role: st
     return user_id
 
 
+def valider_mot_de_passe(mot_de_passe: str) -> None:
+    """Politique minimale : longueur, lettres ET chiffres, pas un mot de passe de démo."""
+    if len(mot_de_passe) < MOT_DE_PASSE_MIN:
+        raise ValueError(f"Le mot de passe doit contenir au moins {MOT_DE_PASSE_MIN} caractères.")
+    if not (re.search(r"[A-Za-z]", mot_de_passe) and re.search(r"\d", mot_de_passe)):
+        raise ValueError("Le mot de passe doit contenir des lettres ET des chiffres.")
+    if mot_de_passe in MOTS_DE_PASSE_DEMO.values():
+        raise ValueError("Ce mot de passe est celui de la démonstration : choisissez-en un autre.")
+
+
+def definir_mot_de_passe(tenant_id: int, username: str, nouveau: str) -> None:
+    """Remplace le mot de passe d'un utilisateur (réinitialisation par l'administrateur)."""
+    valider_mot_de_passe(nouveau)
+    empreinte, sel = hash_mot_de_passe(nouveau)
+    with connexion() as conn:
+        cur = conn.execute(
+            "UPDATE utilisateurs SET empreinte=?, sel=? WHERE tenant_id=? AND username=?",
+            (empreinte, sel, tenant_id, username.strip()),
+        )
+        if cur.rowcount == 0:
+            raise ValueError("Utilisateur introuvable.")
+    journaliser("mot_de_passe_modifie", "utilisateurs", username.strip(), "",
+                tenant_id=tenant_id)
+
+
+def changer_mon_mot_de_passe(ancien: str, nouveau: str) -> None:
+    """Changement de mot de passe par l'utilisateur connecté (ancien mot de passe exigé)."""
+    tenant_id = tenant_courant()
+    username = st.session_state.get("username", "")
+    with connexion() as conn:
+        ligne = conn.execute(
+            "SELECT empreinte, sel FROM utilisateurs WHERE tenant_id=? AND username=? AND actif=1",
+            (tenant_id, username),
+        ).fetchone()
+    if not ligne or not verifier_mot_de_passe(ancien, ligne["empreinte"], ligne["sel"] or ""):
+        raise ValueError("Mot de passe actuel incorrect.")
+    definir_mot_de_passe(tenant_id, username, nouveau)
+
+
+def comptes_mot_de_passe_demo() -> list[str]:
+    """Utilisateurs du tenant courant qui ont encore le mot de passe de la démonstration."""
+    comptes = lire_df(
+        "SELECT username, empreinte, sel FROM utilisateurs WHERE tenant_id=? AND actif=1",
+        (tenant_courant(),),
+    )
+    return [ligne["username"] for _, ligne in comptes.iterrows()
+            if ligne["username"] in MOTS_DE_PASSE_DEMO
+            and verifier_mot_de_passe(MOTS_DE_PASSE_DEMO[ligne["username"]],
+                                      ligne["empreinte"], ligne["sel"] or "")]
+
+
+def connexion_bloquee(tenant_id: int, username: str) -> bool:
+    """Vrai si trop de connexions ont échoué récemment (depuis la dernière réussite)."""
+    limite = (datetime.now() - timedelta(minutes=CONNEXIONS_FENETRE_MIN)).strftime(
+        "%Y-%m-%d %H:%M:%S")
+    with connexion() as conn:
+        echecs = conn.execute(
+            "SELECT COUNT(*) FROM audit_logs WHERE action='login_echec' AND username=?"
+            " AND tenant_id=? AND ts>=? AND id > COALESCE((SELECT MAX(id) FROM audit_logs"
+            " WHERE action='login_reussi' AND username=? AND tenant_id=?), 0)",
+            (username.strip(), tenant_id, limite, username.strip(), tenant_id),
+        ).fetchone()[0]
+    return echecs >= CONNEXIONS_ECHECS_MAX
+
+
 def authentifier(tenant_id: int, username: str, mot_de_passe: str) -> dict | None:
     """Authentifie un utilisateur dans le tenant donné. Retourne sa fiche ou None."""
+    if connexion_bloquee(tenant_id, username):
+        journaliser("login_bloque", "utilisateurs", username, "trop de tentatives échouées",
+                    username=username, tenant_id=tenant_id)
+        return None
     with connexion() as conn:
         ligne = conn.execute(
             "SELECT * FROM utilisateurs WHERE tenant_id=? AND username=? AND actif=1",
@@ -1100,34 +1213,43 @@ def calculer_is(taux: float = TAUX_IS_DEFAUT) -> dict:
 # TRANSIT, IMPORT-EXPORT & DOUANES (contexte ivoirien)
 # ══════════════════════════════════════════════════════════════════════════════
 def calculer_droits(valeur_caf: float, dd_pct: float, regime: str = "C100",
-                    taux_tva: float = TAUX_TVA) -> dict:
+                    taux_tva: float = TAUX_TVA, taux_rs: float = TAUX_RS_PCT) -> dict:
     """Calcule les droits et taxes selon le régime douanier.
 
     Structure du calcul (régime C100, mise à la consommation) :
-      1. Droits de douane (DD)      = valeur CAF × taux DD
-      2. PC UEMOA                   = valeur CAF × 0,8 %
-      3. PCC CEDEAO                 = valeur CAF × 0,5 %
-      4. TVA 18 %                   = (CAF + DD + PC + PCC) × 18 %
-    Les régimes E100 (export), AT (admission temporaire) et TR (transit)
-    bénéficient de taux réduits / exonérations modélisés ici.
+      1. Droits de douane (DD)       = valeur CAF × taux DD
+      2. Redevance statistique (RS)  = valeur CAF × 1 %
+      3. PC UEMOA                    = valeur CAF × 0,8 %
+      4. PCC CEDEAO                  = valeur CAF × 0,5 %
+      5. TVA 18 %                    = (CAF + DD + RS + PC + PCC) × 18 %
+    Les régimes E100 (export), AT (admission temporaire) et TR (transit) ne
+    donnent lieu à aucun droit ni aucune TVA à payer (régimes suspensifs ou
+    exonérés) : voir REGIMES_SUSPENDUS. Tous les taux restent modifiables et
+    doivent être confirmés avec le tarif de la Douane en vigueur.
     """
     valeur_caf = max(float(valeur_caf), 0.0)
-    abattements = {"C100": 1.0, "E100": 0.0, "AT": 0.0, "TR": 0.0}
-    facteur = abattements.get(regime, 1.0)
+    suspendu = regime in REGIMES_SUSPENDUS
+    facteur = 0.0 if suspendu else 1.0
 
     dd = round(valeur_caf * dd_pct / 100.0 * facteur, 2)
+    rs = round(valeur_caf * taux_rs / 100.0 * facteur, 2)
     pc_uemoa = round(valeur_caf * PC_UEMOA_PCT / 100.0 * facteur, 2)
     pcc_cedeao = round(valeur_caf * PCC_CEDEAO_PCT / 100.0 * facteur, 2)
-    tva = round((valeur_caf + dd + pc_uemoa + pcc_cedeao) * taux_tva / 100.0, 2)
-    total = round(dd + pc_uemoa + pcc_cedeao + tva, 2)
+    base_tva = round((valeur_caf + dd + rs + pc_uemoa + pcc_cedeao) * facteur, 2)
+    tva = round(base_tva * taux_tva / 100.0, 2)
+    total = round(dd + rs + pc_uemoa + pcc_cedeao + tva, 2)
     return {
         "valeur_caf": round(valeur_caf, 2),
         "droits_douane": dd,
+        "redevance_statistique": rs,
         "pc_uemoa": pc_uemoa,
         "pcc_cedeao": pcc_cedeao,
+        "base_tva": base_tva,
         "tva": tva,
         "total_droits_taxes": total,
         "regime": regime,
+        "suspendu": suspendu,
+        "note_regime": REGIMES_SUSPENDUS.get(regime, ""),
     }
 
 
@@ -1313,29 +1435,55 @@ def apurer_manifeste(manifeste_id: int) -> None:
 
 
 # ─── Dossiers de transit ──────────────────────────────────────────────────────
+def taux_dd_reference(article: str) -> float | None:
+    """Taux de DD de référence de l'article dans la base tarifaire du tenant (ou None)."""
+    with connexion() as conn:
+        ligne = conn.execute(
+            "SELECT dd FROM articles WHERE tenant_id=? AND nom=?", (tenant_courant(), article)
+        ).fetchone()
+    return float(ligne["dd"]) if ligne else None
+
+
 def creer_dossier(reference: str, client: str, bl: str, article: str, regime: str,
                   fob_xof: float, fret_xof: float, assurance_xof: float, dd_pct: float,
-                  email: str = "", telephone: str = "") -> dict:
+                  email: str = "", telephone: str = "",
+                  fournisseur_nouveau: bool = True, marchandise_sensible: bool = False) -> dict:
     """Crée un dossier de transit : calcule CAF, droits, sélectivité et total.
 
-    Retourne le détail du calcul (ventilation des droits + canal de risque).
+    Le taux de DD déclaré est comparé au taux de référence de la base tarifaire
+    pour alimenter le moteur de sélectivité des risques. Retourne le détail du
+    calcul (ventilation des droits + canal de risque). Lève ValueError si les
+    données sont invalides (référence vide, montant négatif, régime inconnu,
+    référence déjà utilisée).
     """
+    if not str(reference).strip() or not str(client).strip():
+        raise ValueError("La référence et le client sont obligatoires.")
+    if regime not in REGIMES_DOUANIERS:
+        raise ValueError(f"Régime douanier inconnu : {regime}.")
+    if min(fob_xof, fret_xof, assurance_xof) < 0 or not 0 <= dd_pct <= 100:
+        raise ValueError("Montants négatifs ou taux de DD hors de 0–100 % non autorisés.")
     valeur_caf = round(fob_xof + fret_xof + assurance_xof, 2)
     droits = calculer_droits(valeur_caf, dd_pct, regime)
-    risque = scorer_risque(valeur_caf, dd_pct, dd_pct)
+    dd_reference = taux_dd_reference(article)
+    risque = scorer_risque(valeur_caf, dd_pct, dd_pct if dd_reference is None else dd_reference,
+                           fournisseur_nouveau=fournisseur_nouveau,
+                           marchandise_sensible=marchandise_sensible)
     total_facture = round(valeur_caf + droits["total_droits_taxes"], 2)
-    with connexion() as conn:
-        cur = conn.execute(
-            "INSERT INTO dossiers (tenant_id, reference, date, client, bl, article, regime,"
-            " fob_xof, fret_xof, assurance_xof, valeur_caf_xof, droits_douane, tva, total_facture,"
-            " solde_du, statut, canal_risque, score_risque, email, telephone, created_at)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (tenant_courant(), reference, date.today().strftime("%Y-%m-%d"), client, bl, article,
-             regime, fob_xof, fret_xof, assurance_xof, valeur_caf, droits["total_droits_taxes"],
-             droits["tva"], total_facture, total_facture, "En cours", risque["canal"],
-             risque["score"], email, telephone, maintenant()),
-        )
-        dossier_id = cur.lastrowid
+    try:
+        with connexion() as conn:
+            cur = conn.execute(
+                "INSERT INTO dossiers (tenant_id, reference, date, client, bl, article, regime,"
+                " fob_xof, fret_xof, assurance_xof, valeur_caf_xof, droits_douane, tva,"
+                " total_facture, solde_du, statut, canal_risque, score_risque, email, telephone,"
+                " created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (tenant_courant(), reference.strip(), date.today().strftime("%Y-%m-%d"), client, bl,
+                 article, regime, fob_xof, fret_xof, assurance_xof, valeur_caf,
+                 droits["total_droits_taxes"], droits["tva"], total_facture, total_facture,
+                 "En cours", risque["canal"], risque["score"], email, telephone, maintenant()),
+            )
+            dossier_id = cur.lastrowid
+    except sqlite3.IntegrityError as exc:
+        raise ValueError(f"La référence « {reference} » existe déjà.") from exc
     journaliser("dossier_creation", "dossiers", str(dossier_id),
                 f"reference={reference}; canal={risque['canal']}; score={risque['score']}")
     return {"dossier_id": dossier_id, "droits": droits, "risque": risque,
@@ -1348,7 +1496,116 @@ def lister_dossiers() -> pd.DataFrame:
     )
 
 
+# ─── Conformité documentaire du dossier (FDI, BSC, CdC…) ──────────────────────
+def documents_requis(regime: str, fob_xof: float = 0.0) -> list[str]:
+    """Codes des pièces obligatoires selon le régime et la valeur FOB du dossier.
+
+    Import (C100) : facture, B/L, colisage, FDI, BSC, déclaration en douane, et
+    Certificat de Conformité dès que la FOB atteint SEUIL_CDC_FOB_XOF (le CdC
+    peut être déclaré « Exempté » avec motif). Liste de référence à adapter.
+    """
+    if regime == "C100":
+        requis = ["FACTURE", "BL", "COLISAGE", "FDI", "BSC"]
+        if float(fob_xof or 0) >= SEUIL_CDC_FOB_XOF:
+            requis.append("CDC")
+        return requis + ["DECLARATION"]
+    if regime == "AT":
+        return ["FACTURE", "BL", "COLISAGE", "BSC", "DECLARATION"]
+    if regime == "TR":
+        return ["FACTURE", "BL", "TRANSIT"]
+    if regime == "E100":
+        return ["FACTURE", "COLISAGE", "DECLARATION"]
+    return ["FACTURE", "BL"]
+
+
+def enregistrer_document_dossier(dossier_id: int, code: str, reference: str,
+                                 statut: str = "Reçu") -> None:
+    """Enregistre (ou met à jour) la référence d'une pièce du dossier."""
+    if code not in DOCUMENTS_DOSSIER:
+        raise ValueError(f"Pièce inconnue : {code}.")
+    if statut not in DOCUMENT_STATUTS:
+        raise ValueError(f"Statut de pièce inconnu : {statut}.")
+    if statut == "Exempté" and code != "CDC":
+        raise ValueError("Seul le Certificat de Conformité peut être déclaré exempté.")
+    reference = str(reference or "").strip()
+    if not reference:
+        raise ValueError("Indiquez le motif de l'exemption." if statut == "Exempté"
+                         else "Indiquez la référence (numéro) de la pièce.")
+    with connexion() as conn:
+        existe = conn.execute("SELECT 1 FROM dossiers WHERE id=? AND tenant_id=?",
+                              (dossier_id, tenant_courant())).fetchone()
+        if not existe:
+            raise ValueError("Dossier introuvable.")
+        conn.execute(
+            "INSERT INTO dossier_documents (tenant_id, dossier_id, code, reference, statut,"
+            " created_by, created_at) VALUES (?,?,?,?,?,?,?)"
+            " ON CONFLICT(tenant_id, dossier_id, code) DO UPDATE SET reference=excluded.reference,"
+            " statut=excluded.statut, created_by=excluded.created_by, created_at=excluded.created_at",
+            (tenant_courant(), dossier_id, code, reference, statut,
+             st.session_state.get("username", "système"), maintenant()),
+        )
+    journaliser("document_dossier", "dossier_documents", f"{dossier_id}:{code}",
+                f"reference={reference}; statut={statut}")
+
+
+def lister_documents_dossier(dossier_id: int) -> pd.DataFrame:
+    return lire_df(
+        "SELECT code, reference, statut, created_by, created_at FROM dossier_documents"
+        " WHERE tenant_id=? AND dossier_id=? ORDER BY id", (tenant_courant(), dossier_id),
+    )
+
+
+def _references_documents(dossier_id) -> dict:
+    """Pièces enregistrées {code: "référence (statut)"} — vide si dossier inconnu."""
+    if dossier_id is None:
+        return {}
+    docs = lister_documents_dossier(int(dossier_id))
+    return {ligne["code"]: f"{ligne['reference']} ({ligne['statut']})"
+            for _, ligne in docs.iterrows()}
+
+
+def controle_conformite(dossier_id: int) -> dict:
+    """Compare les pièces obligatoires du dossier à celles déjà enregistrées."""
+    with connexion() as conn:
+        dossier = conn.execute("SELECT regime, fob_xof FROM dossiers WHERE id=? AND tenant_id=?",
+                               (dossier_id, tenant_courant())).fetchone()
+    if not dossier:
+        raise ValueError("Dossier introuvable.")
+    requis = documents_requis(dossier["regime"], float(dossier["fob_xof"] or 0))
+    presents = set(_references_documents(dossier_id))
+    manquants = [code for code in requis if code not in presents]
+    return {
+        "requis": requis,
+        "presents": [code for code in requis if code in presents],
+        "manquants": manquants,
+        "libelles_manquants": [DOCUMENTS_DOSSIER[code] for code in manquants],
+        "complet": not manquants,
+    }
+
+
 def maj_statut_dossier(dossier_id: int, statut: str) -> None:
+    """Change le statut d'un dossier en respectant le cycle de vie du transit.
+
+    - on ne saute pas d'étape (on peut revenir en arrière pour corriger) ;
+    - le BAE n'est émis que si toutes les pièces obligatoires sont enregistrées.
+    Lève ValueError en cas de refus.
+    """
+    if statut not in STATUTS_DOSSIER:
+        raise ValueError(f"Statut inconnu : {statut}.")
+    with connexion() as conn:
+        ligne = conn.execute("SELECT statut FROM dossiers WHERE id=? AND tenant_id=?",
+                             (dossier_id, tenant_courant())).fetchone()
+    if not ligne:
+        raise ValueError("Dossier introuvable.")
+    actuel = STATUTS_DOSSIER.index(ligne["statut"]) if ligne["statut"] in STATUTS_DOSSIER else 0
+    cible = STATUTS_DOSSIER.index(statut)
+    if cible > actuel + 1:
+        raise ValueError(f"Étape sautée : passez d'abord à « {STATUTS_DOSSIER[actuel + 1]} ».")
+    if statut == STATUT_BAE and cible > actuel:
+        controle = controle_conformite(dossier_id)
+        if not controle["complet"]:
+            raise ValueError("BAE impossible, pièces manquantes : "
+                             + ", ".join(controle["libelles_manquants"]) + ".")
     executer(
         "UPDATE dossiers SET statut=? WHERE id=? AND tenant_id=?",
         (statut, dossier_id, tenant_courant()),
@@ -1394,10 +1651,18 @@ def generer_bae(dossier: dict, societe: str = "Cabinet Excellence Comptable CI")
     """
     if not REPORTLAB_OK:
         raise RuntimeError("ReportLab indisponible — installation requise pour le PDF.")
+    # Un BAE neuf exige un dossier conforme ; la ré-impression d'un BAE déjà émis reste libre.
+    if dossier.get("id") is not None and dossier.get("statut") in STATUTS_DOSSIER[:3]:
+        controle = controle_conformite(int(dossier["id"]))
+        if not controle["complet"]:
+            raise ValueError("BAE refusé, pièces manquantes : "
+                             + ", ".join(controle["libelles_manquants"]) + ".")
+    pieces = _references_documents(dossier.get("id"))
     numero = f"BAE-{dossier.get('reference', 'SANS-REF')}-{date.today().strftime('%Y%m%d')}"
     empreinte = empreinte_sha256(
         numero, dossier.get("reference"), dossier.get("client"), dossier.get("valeur_caf_xof"),
         dossier.get("droits_douane"), dossier.get("total_facture"),
+        json.dumps(pieces, sort_keys=True, ensure_ascii=False),
     )
     style = _styles_pdf()
     flux = io.BytesIO()
@@ -1419,6 +1684,8 @@ def generer_bae(dossier: dict, societe: str = "Cabinet Excellence Comptable CI")
             ["Valeur en douane (CAF)", f"{float(dossier.get('valeur_caf_xof') or 0):,.0f} FCFA"],
             ["Droits et taxes acquittés", f"{float(dossier.get('droits_douane') or 0):,.0f} FCFA"],
             ["Canal de sélectivité", str(dossier.get("canal_risque", "VERT"))],
+            *[[DOCUMENTS_DOSSIER[code].split(" (")[0], pieces[code]]
+              for code in ("FDI", "BSC", "CDC") if code in pieces],
             ["Statut", str(dossier.get("statut", ""))],
         ], largeurs=[60 * mm, 105 * mm]),
         Spacer(1, 12),
@@ -1890,12 +2157,17 @@ def ecran_connexion() -> bool:
             username = st.text_input("Identifiant")
             mot_de_passe = st.text_input("Mot de passe", type="password")
             valide = st.form_submit_button("Se connecter", use_container_width=True)
-        st.caption("Démo : admin/admin123 · expert/expert123 · collab/collab123 · auditeur/audit123")
+        if os.getenv("SNDGIR_DEMO", "").lower() in ("1", "true", "oui"):
+            st.caption("Démo : " + " · ".join(f"{u}/{m}" for u, m in MOTS_DE_PASSE_DEMO.items()))
 
         if valide:
             fiche = authentifier(int(tenant_id), username, mot_de_passe)
             if not fiche:
-                st.error("Identifiants invalides.")
+                if connexion_bloquee(int(tenant_id), username):
+                    st.error(f"Trop de tentatives échouées. Réessayez dans "
+                             f"{CONNEXIONS_FENETRE_MIN} minutes.")
+                else:
+                    st.error("Identifiants invalides.")
                 return False
             st.session_state.update({
                 "authentifie": True,
@@ -1920,6 +2192,28 @@ def barre_laterale() -> str:
         st.text_input("Clé API Groq (session)", type="password", key="groq_api_key_input",
                       value=st.session_state.get("groq_api_key", ""))
         st.session_state["groq_api_key"] = st.session_state.get("groq_api_key_input", "")
+        st.divider()
+        if st.session_state.get("user_role") == "Administrateur Système":
+            if "comptes_demo" not in st.session_state:
+                st.session_state["comptes_demo"] = comptes_mot_de_passe_demo()
+            if st.session_state["comptes_demo"]:
+                st.warning("⚠️ Mots de passe de démonstration encore actifs : "
+                           + ", ".join(st.session_state["comptes_demo"])
+                           + ". Changez-les (Administration → Utilisateurs).")
+        with st.expander("🔑 Changer mon mot de passe"):
+            with st.form("form_mon_mdp"):
+                ancien = st.text_input("Mot de passe actuel", type="password")
+                nouveau = st.text_input(
+                    f"Nouveau mot de passe ({MOT_DE_PASSE_MIN} caractères min., lettres et chiffres)",
+                    type="password")
+                change = st.form_submit_button("Changer", use_container_width=True)
+            if change:
+                try:
+                    changer_mon_mot_de_passe(ancien, nouveau)
+                    st.session_state.pop("comptes_demo", None)
+                    st.success("Mot de passe modifié.")
+                except ValueError as exc:
+                    st.error(str(exc))
         st.divider()
         integre, nb_lignes, message = verifier_audit()
         st.caption(f"Audit : {nb_lignes} entrées")
@@ -2102,16 +2396,29 @@ def onglet_transit() -> None:
                                                     step=10_000.0)
                         email = st.text_input("E-mail client")
                         telephone = st.text_input("Téléphone client")
+                        fournisseur_nouveau = st.checkbox("Fournisseur sans historique",
+                                                          value=True)
+                        sensible = st.checkbox("Marchandise sensible / droits élevés")
                     soumis = st.form_submit_button("Créer le dossier", use_container_width=True)
                 if soumis and client and reference:
-                    resultat = creer_dossier(reference, client, bl, str(article), regime, fob,
-                                             fret, assurance, dd_pct, email, telephone)
-                    st.success(f"Dossier {reference} créé — total facture "
-                               f"{resultat['total_facture']:,.0f} FCFA.")
-                    st.markdown(
-                        f"Canal de sélectivité : {badge_canal(resultat['risque']['canal'])} "
-                        f"(score {resultat['risque']['score']})", unsafe_allow_html=True,
-                    )
+                    try:
+                        resultat = creer_dossier(reference, client, bl, str(article), regime, fob,
+                                                 fret, assurance, dd_pct, email, telephone,
+                                                 fournisseur_nouveau, sensible)
+                    except ValueError as exc:
+                        st.error(str(exc))
+                    else:
+                        st.success(f"Dossier {reference} créé — total facture "
+                                   f"{resultat['total_facture']:,.0f} FCFA.")
+                        if resultat["droits"]["suspendu"]:
+                            st.info(resultat["droits"]["note_regime"])
+                        st.markdown(
+                            f"Canal de sélectivité : "
+                            f"{badge_canal(resultat['risque']['canal'])} "
+                            f"(score {resultat['risque']['score']})", unsafe_allow_html=True,
+                        )
+                        for motif in resultat["risque"]["motifs"]:
+                            st.caption(f"• {motif}")
         dossiers = lister_dossiers()
         if dossiers.empty:
             st.info("Aucun dossier enregistré.")
@@ -2130,9 +2437,54 @@ def onglet_transit() -> None:
                 with colonnes[1]:
                     statut = st.selectbox("Nouveau statut", STATUTS_DOSSIER, key="maj_statut")
                 if st.button("Mettre à jour le statut", use_container_width=True):
-                    maj_statut_dossier(int(dossier_id), statut)
-                    st.success("Statut mis à jour.")
-                    st.rerun()
+                    try:
+                        maj_statut_dossier(int(dossier_id), statut)
+                    except ValueError as exc:
+                        st.error(str(exc))
+                    else:
+                        st.success("Statut mis à jour.")
+                        st.rerun()
+            with st.expander("✅ Conformité du dossier (FDI, BSC, Certificat de Conformité…)"):
+                dossier_conf = st.selectbox(
+                    "Dossier", dossiers["id"].tolist(), key="conf_dossier_id",
+                    format_func=lambda cle: str(
+                        dossiers.loc[dossiers["id"] == cle, "reference"].iloc[0]))
+                controle = controle_conformite(int(dossier_conf))
+                recues = lister_documents_dossier(int(dossier_conf)).set_index("code")
+                for code in controle["requis"]:
+                    if code in recues.index:
+                        fiche = recues.loc[code]
+                        st.markdown(f"✅ **{DOCUMENTS_DOSSIER[code]}** — {fiche['reference']} "
+                                    f"({fiche['statut']})")
+                    else:
+                        st.markdown(f"⬜ **{DOCUMENTS_DOSSIER[code]}** — manquant")
+                if controle["complet"]:
+                    st.success("Dossier conforme : le BAE peut être émis.")
+                else:
+                    st.warning("Pièces manquantes : "
+                               + ", ".join(controle["libelles_manquants"]) + ".")
+                if exiger("transit.creer"):
+                    with st.form("form_document_dossier"):
+                        colonnes_doc = st.columns(3)
+                        with colonnes_doc[0]:
+                            code_doc = st.selectbox(
+                                "Pièce", list(DOCUMENTS_DOSSIER.keys()),
+                                format_func=lambda cle: DOCUMENTS_DOSSIER[cle])
+                        with colonnes_doc[1]:
+                            reference_doc = st.text_input("Numéro / référence (ou motif)")
+                        with colonnes_doc[2]:
+                            statut_doc = st.selectbox("État", list(DOCUMENT_STATUTS))
+                        enregistrer_doc = st.form_submit_button("Enregistrer la pièce",
+                                                                use_container_width=True)
+                    if enregistrer_doc:
+                        try:
+                            enregistrer_document_dossier(int(dossier_conf), code_doc,
+                                                         reference_doc, statut_doc)
+                        except ValueError as exc:
+                            st.error(str(exc))
+                        else:
+                            st.success("Pièce enregistrée.")
+                            st.rerun()
 
     with onglet_calcul:
         st.caption("Simulation des droits et taxes par régime douanier (TVA paramétrable).")
@@ -2151,13 +2503,21 @@ def onglet_transit() -> None:
             tva_simule = st.number_input("TVA (%)", value=TAUX_TVA, min_value=0.0, max_value=30.0,
                                          key="calc_tva")
         calcul = calculer_droits(valeur_caf, dd_simule, regime_simule, tva_simule)
+        if calcul["suspendu"]:
+            st.info(calcul["note_regime"])
         st.dataframe(pd.DataFrame([
             {"Rubrique": "Droits de douane (DD)", "Montant": calcul["droits_douane"]},
-            {"Rubrique": "Prélèvement UEMOA (0,8 %)", "Montant": calcul["pc_uemoa"]},
-            {"Rubrique": "Prélèvement CEDEAO (0,5 %)", "Montant": calcul["pcc_cedeao"]},
-            {"Rubrique": f"TVA ({tva_simule:.0f} %)", "Montant": calcul["tva"]},
+            {"Rubrique": f"Redevance statistique ({TAUX_RS_PCT:g} %)",
+             "Montant": calcul["redevance_statistique"]},
+            {"Rubrique": f"Prélèvement UEMOA ({PC_UEMOA_PCT:g} %)",
+             "Montant": calcul["pc_uemoa"]},
+            {"Rubrique": f"Prélèvement CEDEAO ({PCC_CEDEAO_PCT:g} %)",
+             "Montant": calcul["pcc_cedeao"]},
+            {"Rubrique": f"TVA ({tva_simule:.0f} %) sur {calcul['base_tva']:,.0f}",
+             "Montant": calcul["tva"]},
             {"Rubrique": "TOTAL DROITS & TAXES", "Montant": calcul["total_droits_taxes"]},
         ]), use_container_width=True, hide_index=True)
+        st.caption("Taux indicatifs : à confirmer avec le tarif de la Douane en vigueur.")
         analyse = scorer_risque(valeur_caf, dd_simule, dd_simule)
         st.markdown("##### Sélectivité des risques", unsafe_allow_html=True)
         st.markdown(f"Score {analyse['score']} → {badge_canal(analyse['canal'])} "
@@ -2284,7 +2644,8 @@ def onglet_transit() -> None:
                         contenu, empreinte = generer_bae(dossier)
                         st.session_state["bae_pdf"] = contenu
                         st.session_state["bae_empreinte"] = empreinte
-                    except RuntimeError as exc:
+                    except (RuntimeError, ValueError) as exc:
+                        st.session_state.pop("bae_pdf", None)
                         st.error(str(exc))
                 if st.session_state.get("bae_pdf"):
                     st.download_button("⬇️ Télécharger le BAE", st.session_state["bae_pdf"],
@@ -2483,15 +2844,40 @@ def onglet_administration() -> None:
                 soumis = st.form_submit_button("Créer l'utilisateur", use_container_width=True)
         if soumis and username and mot_de_passe:
             try:
+                valider_mot_de_passe(mot_de_passe)
                 creer_utilisateur(int(tenant_id), username, mot_de_passe, role, email, telephone)
                 st.success(f"Utilisateur {username} créé.")
                 st.rerun()
+            except ValueError as exc:
+                st.error(str(exc))
             except sqlite3.IntegrityError:
                 st.error("Cet identifiant existe déjà pour cette entreprise.")
         st.dataframe(lire_df(
             "SELECT u.id, t.raison_sociale, u.username, u.role, u.email, u.actif"
             " FROM utilisateurs u JOIN tenants t ON t.id = u.tenant_id ORDER BY u.id"
         ), use_container_width=True)
+        st.markdown("##### Réinitialiser un mot de passe")
+        comptes = lire_df(
+            "SELECT u.tenant_id, u.username, t.raison_sociale FROM utilisateurs u"
+            " JOIN tenants t ON t.id = u.tenant_id ORDER BY t.raison_sociale, u.username"
+        )
+        if not comptes.empty:
+            cles = {f"{ligne['tenant_id']}|{ligne['username']}":
+                    f"{ligne['username']} — {ligne['raison_sociale']}"
+                    for _, ligne in comptes.iterrows()}
+            with st.form("form_reset_mdp"):
+                choix = st.selectbox("Utilisateur", list(cles.keys()),
+                                     format_func=lambda cle: cles[cle])
+                nouveau_mdp = st.text_input("Nouveau mot de passe", type="password")
+                reinit = st.form_submit_button("Réinitialiser", use_container_width=True)
+            if reinit:
+                tid, uname = choix.split("|", 1)
+                try:
+                    definir_mot_de_passe(int(tid), uname, nouveau_mdp)
+                    st.session_state.pop("comptes_demo", None)
+                    st.success(f"Mot de passe de {uname} réinitialisé.")
+                except ValueError as exc:
+                    st.error(str(exc))
     with onglet_audit:
         integre, nb_lignes, message = verifier_audit()
         if integre:

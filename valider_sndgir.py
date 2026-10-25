@@ -60,11 +60,19 @@ def tester_audit() -> None:
     _verifier("intègre" in message, "Message d'intégrité conforme")
 
     with erp.connexion() as conn:
+        ligne = conn.execute("SELECT details FROM audit_logs WHERE id=1").fetchone()
+        details_origine = ligne["details"]
         conn.execute("UPDATE audit_logs SET details='falsifié' WHERE id=1")
     valide_apres, _, message_apres = erp.verifier_audit()
     _verifier(not valide_apres, "Une falsification est bien détectée")
     _verifier("Rupture" in message_apres or "incohérent" in message_apres,
               "Le message signale la rupture")
+
+    # Le test ne doit pas laisser la base corrompue : on remet la ligne d'origine.
+    with erp.connexion() as conn:
+        conn.execute("UPDATE audit_logs SET details=? WHERE id=1", (details_origine,))
+    restaure, _, _ = erp.verifier_audit()
+    _verifier(restaure, "Chaîne d'audit rétablie après le test de falsification")
 
 
 def tester_comptabilite() -> None:
@@ -112,11 +120,18 @@ def tester_douanes() -> None:
     _verifier(calcul["droits_douane"] == 2_000_000, "DD = 20 % de la CAF (2 000 000)")
     _verifier(calcul["pc_uemoa"] == 80_000, "Prélèvement UEMOA = 0,8 % (80 000)")
     _verifier(calcul["pcc_cedeao"] == 50_000, "Prélèvement CEDEAO = 0,5 % (50 000)")
-    attendu_tva = round((10_000_000 + 2_000_000 + 80_000 + 50_000) * 0.18, 2)
-    _verifier(calcul["tva"] == attendu_tva, f"TVA 18 % = {attendu_tva:,.0f}")
+    _verifier(calcul["redevance_statistique"] == 100_000, "Redevance statistique = 1 % (100 000)")
+    attendu_tva = round((10_000_000 + 2_000_000 + 100_000 + 80_000 + 50_000) * 0.18, 2)
+    _verifier(calcul["tva"] == attendu_tva, f"TVA 18 % sur CAF + droits et taxes = {attendu_tva:,.0f}")
+    _verifier(calcul["total_droits_taxes"] == 2_000_000 + 100_000 + 80_000 + 50_000 + attendu_tva,
+              "Total droits et taxes = somme des rubriques")
 
-    exonere = erp.calculer_droits(10_000_000, 20.0, "E100")
-    _verifier(exonere["droits_douane"] == 0, "Régime E100 : droits de douane exonérés")
+    for regime in ("E100", "AT", "TR"):
+        suspendu = erp.calculer_droits(10_000_000, 20.0, regime)
+        _verifier(suspendu["total_droits_taxes"] == 0 and suspendu["tva"] == 0
+                  and suspendu["suspendu"],
+                  f"Régime {regime} : aucun droit ni TVA à payer")
+    _verifier(not calcul["suspendu"], "Régime C100 : droits exigibles")
 
     vert = erp.scorer_risque(1_000_000, 5.0, 5.0, fournisseur_nouveau=False)
     rouge = erp.scorer_risque(80_000_000, 20.0, 5.0, ecart_prix_pct=35.0,
@@ -201,12 +216,8 @@ def tester_rbac_isolation() -> None:
     erp.st.session_state["tenant_id"] = premier
     dossiers_premier = len(erp.lister_dossiers())
     erp.st.session_state["tenant_id"] = int(locataires.iloc[-1]["id"])
-    dossiers_dernier = len(erp.lister_dossiers())git add .
-git commit -m "Sauvegarde de l'etape precedente fonctionnelle"
-git push origin main
-    erp.st.session_state["tenagit add .
-git commit -m "Sauvegarde de l'etape precedente fonctionnelle"
-git push origin mainnt_id"] = premier
+    dossiers_dernier = len(erp.lister_dossiers())
+    erp.st.session_state["tenant_id"] = premier
     _verifier(dossiers_dernier != dossiers_premier,
               f"Isolation active (tenant A={dossiers_premier}, tenant B={dossiers_dernier})")
 
@@ -217,8 +228,9 @@ def tester_generation_pdf() -> None:
         _verifier(True, "ReportLab absent — test PDF ignoré")
         return
     dossiers = erp.lister_dossiers()
+    dossiers = dossiers[dossiers["statut"] == erp.STATUT_BAE]
     if dossiers.empty:
-        _verifier(True, "Aucun dossier — test PDF ignoré")
+        _verifier(True, "Aucun dossier au statut BAE — test PDF ignoré")
         return
     dossier = dossiers.iloc[0].to_dict()
     contenu, empreinte = erp.generer_bae(dossier)
@@ -227,6 +239,131 @@ def tester_generation_pdf() -> None:
     _verifier(len(empreinte) == 64, "Empreinte SHA-256 de 64 caractères")
     facture = erp.generer_facture_transitaire(dossier, 500_000, 300_000, 100_000)
     _verifier(facture[:4] == b"%PDF", f"Facture PDF générée ({len(facture)} octets)")
+
+
+def _refus(fonction, *args, **kwargs) -> str | None:
+    """Message du ValueError levé par fonction(...), ou None si aucun refus."""
+    try:
+        fonction(*args, **kwargs)
+    except ValueError as erreur:
+        return str(erreur)
+    return None
+
+
+def tester_conformite_dossier() -> None:
+    print("\n── Conformité documentaire & cycle de vie du dossier ───")
+    suffixe = f"{erp.datetime.now():%H%M%S}"
+    article = "Ordinateurs portables & tablettes"  # DD de référence : 5 %
+    _verifier("CDC" in erp.documents_requis("C100", 5_000_000),
+              "CdC exigé à partir de 1 000 000 FCFA de FOB")
+    _verifier("CDC" not in erp.documents_requis("C100", 500_000), "CdC non exigé sous le seuil")
+
+    resultat = erp.creer_dossier(f"IMP-CONF-{suffixe}", "Client Conformité", "BL-CONF-1",
+                                 article, "C100", 5_000_000, 500_000, 100_000, 5.0)
+    did = resultat["dossier_id"]
+    _verifier(not resultat["droits"]["suspendu"], "Dossier C100 créé avec droits exigibles")
+
+    _verifier("Étape sautée" in (_refus(erp.maj_statut_dossier, did, erp.STATUT_BAE) or ""),
+              "On ne peut pas sauter d'étape (En cours → BAE refusé)")
+    erp.maj_statut_dossier(did, erp.STATUTS_DOSSIER[1])
+    erp.maj_statut_dossier(did, erp.STATUTS_DOSSIER[2])
+    _verifier("pièces manquantes" in (_refus(erp.maj_statut_dossier, did, erp.STATUT_BAE) or ""),
+              "BAE refusé tant que les pièces obligatoires manquent")
+    ligne = erp.lister_dossiers()
+    dossier = ligne.loc[ligne["id"] == did].iloc[0].to_dict()
+    if erp.REPORTLAB_OK:
+        _verifier("BAE refusé" in (_refus(erp.generer_bae, dossier) or ""),
+                  "PDF du BAE refusé tant que le dossier n'est pas conforme")
+
+    _verifier("exempté" in (_refus(erp.enregistrer_document_dossier, did, "FDI", "x", "Exempté") or ""),
+              "Seul le CdC peut être déclaré exempté")
+    _verifier(_refus(erp.enregistrer_document_dossier, did, "FDI", "  ") is not None,
+              "Pièce sans référence refusée")
+    _verifier(_refus(erp.enregistrer_document_dossier, did, "INCONNU", "x") is not None,
+              "Pièce inconnue refusée")
+    for code in erp.documents_requis("C100", 5_000_000):
+        if code == "CDC":
+            erp.enregistrer_document_dossier(did, code, "Produit exempté (motif de test)", "Exempté")
+        else:
+            erp.enregistrer_document_dossier(did, code, f"{code}-{suffixe}")
+    controle = erp.controle_conformite(did)
+    _verifier(controle["complet"] and not controle["manquants"], "Dossier conforme : aucune pièce manquante")
+
+    if erp.REPORTLAB_OK:
+        contenu, empreinte_1 = erp.generer_bae(dossier)
+        _verifier(contenu[:4] == b"%PDF", "BAE émis une fois le dossier conforme")
+        erp.enregistrer_document_dossier(did, "FDI", f"FDI-MODIFIEE-{suffixe}")
+        _, empreinte_2 = erp.generer_bae(dossier)
+        _verifier(empreinte_1 != empreinte_2, "Le sceau du BAE change si une pièce change")
+    erp.maj_statut_dossier(did, erp.STATUT_BAE)
+    erp.maj_statut_dossier(did, erp.STATUTS_DOSSIER[4])
+    erp.maj_statut_dossier(did, erp.STATUT_BAE)
+    statut = erp.lister_dossiers().loc[lambda d: d["id"] == did, "statut"].iloc[0]
+    _verifier(statut == erp.STATUT_BAE, "Retour d'une étape autorisé pour corriger une erreur")
+
+    _verifier("existe déjà" in (_refus(erp.creer_dossier, f"IMP-CONF-{suffixe}", "Autre", "",
+                                       article, "C100", 1, 1, 1, 5.0) or ""),
+              "Référence de dossier en double refusée")
+    _verifier(_refus(erp.creer_dossier, f"IMP-NEG-{suffixe}", "Client", "", article, "C100",
+                     -1, 0, 0, 5.0) is not None, "Montant négatif refusé")
+    _verifier(_refus(erp.creer_dossier, f"IMP-REG-{suffixe}", "Client", "", article, "ZZZ",
+                     1, 0, 0, 5.0) is not None, "Régime douanier inconnu refusé")
+
+    ecart = erp.creer_dossier(f"IMP-DD-{suffixe}", "Client Écart", "", article, "C100",
+                              5_000_000, 0, 0, 20.0)["risque"]
+    _verifier(any("Écart de taux DD" in motif for motif in ecart["motifs"]),
+              "Le taux de DD déclaré est comparé au tarif de référence (écart signalé)")
+
+    autre = erp.creer_tenant(f"conf-{suffixe}", "Cabinet Conformité", "Côte d'Ivoire",
+                             "Réel simplifié")
+    precedent = erp.st.session_state.get("tenant_id")
+    erp.st.session_state["tenant_id"] = autre
+    _verifier(erp.lister_documents_dossier(did).empty,
+              "Isolation : les pièces d'un tenant sont invisibles pour un autre")
+    _verifier(_refus(erp.controle_conformite, did) is not None,
+              "Isolation : le contrôle d'un dossier d'un autre tenant est refusé")
+    erp.st.session_state["tenant_id"] = precedent
+
+
+def tester_comptes() -> None:
+    print("\n── Comptes : mots de passe & blocage des tentatives ────")
+    _verifier("admin" in erp.comptes_mot_de_passe_demo(),
+              "Les mots de passe de démonstration encore actifs sont détectés")
+    _verifier(_refus(erp.valider_mot_de_passe, "court1") is not None, "Mot de passe trop court refusé")
+    _verifier(_refus(erp.valider_mot_de_passe, "uniquementlettres") is not None,
+              "Mot de passe sans chiffre refusé")
+    _verifier(_refus(erp.valider_mot_de_passe, "admin123") is not None,
+              "Mot de passe de démonstration refusé")
+    _verifier(_refus(erp.valider_mot_de_passe, "Solide2025xy") is None, "Mot de passe solide accepté")
+
+    suffixe = f"{erp.datetime.now():%H%M%S}"
+    tenant = erp.creer_tenant(f"cpt-{suffixe}", "Cabinet Comptes", "Côte d'Ivoire", "Réel simplifié")
+    erp.creer_utilisateur(tenant, "agent", "Ancien2025xyz", "Collaborateur", "a@test.ci")
+    erp.definir_mot_de_passe(tenant, "agent", "Nouveau2025xyz")
+    _verifier(erp.authentifier(tenant, "agent", "Nouveau2025xyz") is not None,
+              "Mot de passe réinitialisé par l'administrateur : accepté")
+    _verifier(erp.authentifier(tenant, "agent", "Ancien2025xyz") is None,
+              "Ancien mot de passe refusé après réinitialisation")
+
+    session = erp.st.session_state
+    precedent = (session.get("tenant_id"), session.get("username"))
+    session["tenant_id"], session["username"] = tenant, "agent"
+    _verifier(_refus(erp.changer_mon_mot_de_passe, "faux", "Autre2025xyzz") is not None,
+              "Changement refusé si l'ancien mot de passe est faux")
+    erp.changer_mon_mot_de_passe("Nouveau2025xyz", "Autre2025xyzz")
+    _verifier(erp.authentifier(tenant, "agent", "Autre2025xyzz") is not None,
+              "Changement de mot de passe par l'utilisateur effectif")
+    session["tenant_id"], session["username"] = precedent
+
+    erp.creer_utilisateur(tenant, "cible", "Cible2025xyzz", "Collaborateur", "c@test.ci")
+    for _ in range(erp.CONNEXIONS_ECHECS_MAX):
+        erp.authentifier(tenant, "cible", "mauvais")
+    _verifier(erp.connexion_bloquee(tenant, "cible"), "Compte bloqué après trop d'échecs")
+    _verifier(erp.authentifier(tenant, "cible", "Cible2025xyzz") is None,
+              "Compte bloqué : même le bon mot de passe est refusé")
+    _verifier(not erp.connexion_bloquee(tenant, "agent"), "Les autres comptes ne sont pas bloqués")
+    valide, nb_lignes, _ = erp.verifier_audit()
+    _verifier(valide, f"Chaîne d'audit toujours intègre ({nb_lignes} entrées)")
 
 
 def main() -> int:
@@ -241,7 +378,9 @@ def main() -> int:
     tester_surestaries()
     tester_ocr()
     tester_transit()
+    tester_conformite_dossier()
     tester_tenant()
+    tester_comptes()
     tester_rbac_isolation()
     tester_generation_pdf()
     print("\n" + "═" * 62)
