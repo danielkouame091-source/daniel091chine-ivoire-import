@@ -2303,52 +2303,190 @@ PALETTE = {
 }
 
 
+CSS_THEME_3D = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+:root{
+  --bg:#04060C; --txt:#F5F7FA; --txt2:#8B95A7; --acc:#0A84FF; --acc2:#5E5CE6;
+  --ok:#30D158; --warn:#FF9F0A; --bad:#FF453A;
+  --glass:linear-gradient(145deg,rgba(255,255,255,.085),rgba(255,255,255,.025));
+  --edge:rgba(255,255,255,.12);
+  --lift:0 1px 0 rgba(255,255,255,.14) inset,0 -1px 0 rgba(0,0,0,.4) inset,
+         0 18px 40px -12px rgba(0,0,0,.65),0 6px 14px -6px rgba(0,0,0,.5);
+}
+html,body,[class*="css"]{font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;}
+.stApp{
+  color:var(--txt);
+  background:
+    radial-gradient(900px 520px at 8% -8%,rgba(10,132,255,.22),transparent 60%),
+    radial-gradient(800px 560px at 100% 0%,rgba(94,92,230,.20),transparent 60%),
+    radial-gradient(700px 500px at 50% 115%,rgba(48,209,88,.10),transparent 60%),
+    var(--bg);
+  background-attachment:fixed;
+}
+.stApp::before{ /* grille en perspective, très discrète */
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.35;
+  background-image:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),
+                   linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px);
+  background-size:56px 56px;
+  -webkit-mask-image:radial-gradient(ellipse at 50% 0%,#000 0%,transparent 70%);
+          mask-image:radial-gradient(ellipse at 50% 0%,#000 0%,transparent 70%);
+}
+.block-container{padding-top:2.2rem;max-width:1280px;position:relative;z-index:1;}
+h1,h2,h3{letter-spacing:-.02em;font-weight:800;}
+h1{background:linear-gradient(180deg,#fff,#9fb4d6);-webkit-background-clip:text;
+   background-clip:text;-webkit-text-fill-color:transparent;}
+h5,h4{color:#dfe6f2;font-weight:700;letter-spacing:-.01em;}
+
+/* ---------- Cartes en verre 3D ---------- */
+.sndgir-card{
+  position:relative;background:var(--glass);
+  backdrop-filter:blur(22px) saturate(170%);-webkit-backdrop-filter:blur(22px) saturate(170%);
+  border:1px solid var(--edge);border-radius:22px;padding:20px 22px;margin-bottom:16px;
+  box-shadow:var(--lift);transform:perspective(900px) rotateX(0) rotateY(0) translateZ(0);
+  transition:transform .35s cubic-bezier(.2,.8,.2,1),box-shadow .35s ease,border-color .35s ease;
+  overflow:hidden;
+}
+.sndgir-card::before{ /* reflet de lumière */
+  content:"";position:absolute;inset:0 0 auto 0;height:55%;pointer-events:none;
+  background:linear-gradient(180deg,rgba(255,255,255,.10),transparent);opacity:.55;
+}
+.sndgir-card::after{ /* liseré coloré en bas */
+  content:"";position:absolute;left:18px;right:18px;bottom:0;height:2px;border-radius:2px;
+  background:linear-gradient(90deg,transparent,var(--cardc,var(--acc)),transparent);opacity:.9;
+}
+.sndgir-card:hover{
+  transform:perspective(900px) rotateX(3deg) rotateY(-3deg) translateY(-6px);
+  border-color:rgba(255,255,255,.22);
+  box-shadow:0 1px 0 rgba(255,255,255,.18) inset,0 30px 60px -14px rgba(0,0,0,.75),
+             0 0 40px -10px var(--cardc,var(--acc));
+}
+.sndgir-card.k-vert{--cardc:var(--ok)}.sndgir-card.k-bleu{--cardc:var(--acc)}
+.sndgir-card.k-jaune{--cardc:var(--warn)}.sndgir-card.k-rouge{--cardc:var(--bad)}
+.k-titre{color:var(--txt2);font-size:.74rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;}
+.k-valeur{font-size:1.85rem;font-weight:800;margin:6px 0 8px;letter-spacing:-.03em;
+  text-shadow:0 2px 14px rgba(10,132,255,.25);}
+.sndgir-badge{display:inline-block;padding:3px 12px;border-radius:999px;font-size:.72rem;font-weight:600;
+  border:1px solid rgba(255,255,255,.08);}
+.b-vert{background:rgba(48,209,88,.15);color:var(--ok)}
+.b-bleu{background:rgba(10,132,255,.15);color:var(--acc)}
+.b-jaune{background:rgba(255,159,10,.15);color:var(--warn)}
+.b-rouge{background:rgba(255,69,58,.15);color:var(--bad)}
+
+/* ---------- Boutons en relief ---------- */
+div[data-testid="stButton"]>button,div[data-testid="stFormSubmitButton"]>button,
+div[data-testid="stDownloadButton"]>button{
+  border-radius:14px!important;color:#fff!important;font-weight:600!important;
+  background:linear-gradient(180deg,#2b8cff 0%,#0A63D6 100%)!important;
+  border:1px solid rgba(255,255,255,.22)!important;
+  box-shadow:0 1px 0 rgba(255,255,255,.35) inset,0 -2px 0 rgba(0,0,0,.25) inset,
+             0 10px 20px -8px rgba(10,132,255,.7),0 4px 8px rgba(0,0,0,.4)!important;
+  transition:transform .15s ease,box-shadow .15s ease,filter .15s ease!important;
+}
+div[data-testid="stButton"]>button:hover,div[data-testid="stFormSubmitButton"]>button:hover,
+div[data-testid="stDownloadButton"]>button:hover{
+  transform:translateY(-2px);filter:brightness(1.1);
+  box-shadow:0 1px 0 rgba(255,255,255,.4) inset,0 -2px 0 rgba(0,0,0,.25) inset,
+             0 16px 28px -8px rgba(10,132,255,.85),0 6px 12px rgba(0,0,0,.45)!important;
+}
+div[data-testid="stButton"]>button:active,div[data-testid="stFormSubmitButton"]>button:active{
+  transform:translateY(1px);
+  box-shadow:0 2px 6px rgba(0,0,0,.5) inset,0 2px 6px rgba(10,132,255,.4)!important;
+}
+
+/* ---------- Champs de saisie (creusés) ---------- */
+div[data-baseweb="input"],div[data-baseweb="select"]>div,div[data-baseweb="textarea"],
+div[data-testid="stNumberInput"] div[data-baseweb="input"]{
+  background:rgba(0,0,0,.28)!important;border-radius:12px!important;
+  border:1px solid rgba(255,255,255,.09)!important;
+  box-shadow:0 2px 6px rgba(0,0,0,.55) inset,0 1px 0 rgba(255,255,255,.06)!important;
+  transition:border-color .2s ease,box-shadow .2s ease;
+}
+div[data-baseweb="input"]:focus-within,div[data-baseweb="select"]>div:focus-within{
+  border-color:var(--acc)!important;
+  box-shadow:0 2px 6px rgba(0,0,0,.55) inset,0 0 0 3px rgba(10,132,255,.28)!important;
+}
+label,div[data-testid="stWidgetLabel"] p{color:#c3cbda!important;font-weight:600!important;font-size:.82rem!important;}
+
+/* ---------- Formulaires & expanders ---------- */
+div[data-testid="stForm"]{
+  background:var(--glass);border:1px solid var(--edge);border-radius:22px;padding:22px;
+  box-shadow:var(--lift);backdrop-filter:blur(22px);
+}
+div[data-testid="stExpander"]{background:var(--glass);border:1px solid var(--edge)!important;
+  border-radius:16px;box-shadow:var(--lift);}
+
+/* ---------- Onglets : segments lumineux ---------- */
+div[data-baseweb="tab-list"]{
+  gap:6px;background:rgba(0,0,0,.30);padding:6px;border-radius:16px;
+  border:1px solid rgba(255,255,255,.07);box-shadow:0 3px 10px rgba(0,0,0,.5) inset;
+  overflow-x:auto;
+}
+button[data-baseweb="tab"]{
+  border-radius:11px!important;padding:8px 16px!important;color:var(--txt2)!important;font-weight:600!important;
+  transition:all .2s ease;background:transparent!important;
+}
+button[data-baseweb="tab"]:hover{color:#fff!important;background:rgba(255,255,255,.06)!important;}
+button[data-baseweb="tab"][aria-selected="true"]{
+  color:#fff!important;
+  background:linear-gradient(180deg,rgba(255,255,255,.16),rgba(255,255,255,.06))!important;
+  box-shadow:0 1px 0 rgba(255,255,255,.25) inset,0 6px 14px -4px rgba(10,132,255,.5),0 2px 4px rgba(0,0,0,.4);
+}
+div[data-baseweb="tab-highlight"],div[data-baseweb="tab-border"]{display:none!important;}
+
+/* ---------- Métriques, tableaux, alertes ---------- */
+div[data-testid="stMetric"]{background:var(--glass);border:1px solid var(--edge);border-radius:18px;
+  padding:16px 18px;box-shadow:var(--lift);}
+div[data-testid="stMetricValue"]{font-weight:800;letter-spacing:-.02em;}
+div[data-testid="stDataFrame"]{border-radius:16px;overflow:hidden;border:1px solid var(--edge);
+  box-shadow:var(--lift);}
+div[data-testid="stAlert"]{border-radius:14px;border:1px solid var(--edge);
+  backdrop-filter:blur(14px);box-shadow:0 8px 20px -10px rgba(0,0,0,.6);}
+
+/* ---------- Barre latérale ---------- */
+section[data-testid="stSidebar"]{
+  background:linear-gradient(180deg,rgba(14,20,36,.92),rgba(4,6,12,.96));
+  border-right:1px solid rgba(255,255,255,.07);
+  box-shadow:12px 0 40px -16px rgba(0,0,0,.8);backdrop-filter:blur(24px);
+}
+section[data-testid="stSidebar"] hr{border-color:rgba(255,255,255,.07);}
+
+/* ---------- Écran de connexion ---------- */
+.hero{position:relative;text-align:center;padding:26px 0 8px;}
+.hero-logo{
+  width:84px;height:84px;margin:0 auto 14px;border-radius:26px;display:flex;align-items:center;justify-content:center;
+  font-size:2.3rem;
+  background:linear-gradient(145deg,#3b9bff,#5E5CE6 60%,#2a2f8f);
+  box-shadow:0 1px 0 rgba(255,255,255,.45) inset,0 -4px 8px rgba(0,0,0,.3) inset,
+             0 24px 46px -10px rgba(10,132,255,.7),0 0 0 1px rgba(255,255,255,.12);
+  animation:flotte 5s ease-in-out infinite;
+}
+.hero h1{margin:.1rem 0 .2rem;font-size:2.4rem;}
+.hero p{color:var(--txt2);margin:0 0 6px;font-size:.95rem;}
+.hero-puces{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:10px;}
+.hero-puces span{font-size:.72rem;font-weight:600;color:#cfd8e8;padding:4px 12px;border-radius:999px;
+  background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);}
+@keyframes flotte{0%,100%{transform:translateY(0) rotateX(0)}50%{transform:translateY(-8px) rotateX(6deg)}}
+@keyframes entree{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+.block-container>div{animation:entree .5s ease both;}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+@media (max-width:640px){.k-valeur{font-size:1.4rem}.hero h1{font-size:1.8rem}}
+#MainMenu,footer{visibility:hidden;}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:rgba(255,255,255,.14);border-radius:10px}
+</style>
+"""
+
+
 def injecter_theme() -> None:
-    st.markdown(f"""
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
-    html, body, [class*="css"] {{ font-family: 'Inter', -apple-system, sans-serif; }}
-    .stApp {{ background: {PALETTE['gradient']}; color: {PALETTE['texte']}; }}
-    .sndgir-card {{
-        background: {PALETTE['card']};
-        backdrop-filter: blur(20px) saturate(160%);
-        border: 1px solid {PALETTE['border']};
-        border-radius: 20px; padding: 20px 22px; margin-bottom: 14px;
-        box-shadow: 0 8px 28px rgba(0,0,0,0.45);
-        transition: transform .22s ease, box-shadow .22s ease;
-    }}
-    .sndgir-card:hover {{ transform: translateY(-3px); box-shadow: 0 16px 40px rgba(0,0,0,0.55); }}
-    .sndgir-badge {{
-        display:inline-block; padding:3px 12px; border-radius:999px;
-        font-size:0.72rem; font-weight:600;
-    }}
-    .b-vert  {{ background: rgba(48,209,88,0.15);  color:{PALETTE['succes']}; }}
-    .b-bleu  {{ background: rgba(10,132,255,0.15); color:{PALETTE['accent']}; }}
-    .b-jaune {{ background: rgba(255,159,10,0.15); color:{PALETTE['alerte']}; }}
-    .b-rouge {{ background: rgba(255,69,58,0.15);  color:{PALETTE['danger']}; }}
-    div[data-testid="stButton"] > button {{
-        border-radius: 14px !important;
-        background: linear-gradient(160deg, #182647, #0E1830) !important;
-        border: 1px solid rgba(255,255,255,0.09) !important;
-        color: {PALETTE['texte']} !important; font-weight: 600 !important;
-    }}
-    div[data-testid="stMetric"] {{
-        background: {PALETTE['card']}; border: 1px solid {PALETTE['border']};
-        border-radius: 18px; padding: 16px;
-    }}
-    section[data-testid="stSidebar"] {{
-        background: rgba(5,7,13,0.85); border-right: 1px solid rgba(255,255,255,0.06);
-    }}
-    #MainMenu, footer {{ visibility: hidden; }}
-    </style>
-    """, unsafe_allow_html=True)
+    st.markdown(CSS_THEME_3D, unsafe_allow_html=True)
 
 
 def carte_kpi(titre: str, valeur: str, sous_texte: str = "", niveau: str = "bleu") -> None:
     st.markdown(f"""
-    <div class="sndgir-card">
-        <div style="color:{PALETTE['texte_2']};font-size:0.78rem;font-weight:600;">{titre}</div>
-        <div style="font-size:1.65rem;font-weight:800;margin:4px 0;">{valeur}</div>
+    <div class="sndgir-card k-{niveau}">
+        <div class="k-titre">{titre}</div>
+        <div class="k-valeur">{valeur}</div>
         <span class="sndgir-badge b-{niveau}">{sous_texte}</span>
     </div>
     """, unsafe_allow_html=True)
@@ -2365,8 +2503,13 @@ def graphique_barres(df: pd.DataFrame, x: str, y: str, titre: str = ""):
         st.info("Aucune donnée à représenter.")
         return
     if PLOTLY_OK:
-        figure = px.bar(df, x=x, y=y, title=titre, template="plotly_dark")
-        figure.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+        figure = px.bar(df, x=x, y=y, title=titre, template="plotly_dark",
+                        color_discrete_sequence=["#0A84FF"])
+        figure.update_traces(marker_line_width=0, opacity=0.92)
+        figure.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                             font_family="Inter", margin=dict(l=10, r=10, t=50, b=10),
+                             xaxis=dict(gridcolor="rgba(255,255,255,0.05)"),
+                             yaxis=dict(gridcolor="rgba(255,255,255,0.07)"))
         st.plotly_chart(figure, use_container_width=True)
     else:
         st.caption(titre)
@@ -2380,7 +2523,9 @@ def graphique_camembert(df: pd.DataFrame, noms: str, valeurs: str, titre: str = 
     if PLOTLY_OK:
         figure = px.pie(df, names=noms, values=valeurs, title=titre, hole=0.55,
                         template="plotly_dark")
-        figure.update_layout(paper_bgcolor="rgba(0,0,0,0)")
+        figure.update_traces(marker=dict(line=dict(color="#04060C", width=3)))
+        figure.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_family="Inter",
+                             margin=dict(l=10, r=10, t=50, b=10))
         st.plotly_chart(figure, use_container_width=True)
     else:
         st.caption(titre)
@@ -2392,11 +2537,15 @@ def graphique_camembert(df: pd.DataFrame, noms: str, valeurs: str, titre: str = 
 # ══════════════════════════════════════════════════════════════════════════════
 def ecran_connexion() -> bool:
     """Écran d'authentification multi-tenant. Retourne True si connecté."""
-    st.markdown(f"<h1 style='text-align:center;'>🏦 {APP_NAME}</h1>", unsafe_allow_html=True)
-    st.markdown(
-        "<p style='text-align:center;color:#8B95A7;'>Comptabilité SYSCOHADA · Transit & "
-        "Douanes · Fiscalité DGI · Multi-tenant sécurisé</p>", unsafe_allow_html=True,
-    )
+    st.markdown(f"""
+    <div class="hero">
+        <div class="hero-logo">🏦</div>
+        <h1>{APP_NAME}</h1>
+        <p>Comptabilité SYSCOHADA · Transit &amp; Douanes · Fiscalité DGI</p>
+        <div class="hero-puces"><span>🔒 Multi-tenant sécurisé</span><span>📜 Audit infalsifiable</span>
+        <span>🇨🇮 Côte d'Ivoire · UEMOA</span></div>
+    </div>
+    """, unsafe_allow_html=True)
     tenants = lister_tenants()
     if tenants.empty:
         st.error("Aucun tenant disponible — la base n'a pas été initialisée.")
