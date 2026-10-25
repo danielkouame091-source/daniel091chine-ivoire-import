@@ -7,6 +7,7 @@ Seule la section choisie est calculée et affichée.
 from __future__ import annotations
 
 import streamlit as st
+from sndgir_i18n import T, langue as _langue
 
 CSS_SOUS_MENU = """
 /* ---------- Sous-menus : tuiles carrées plus petites ---------- */
@@ -196,16 +197,16 @@ def _echapper(texte) -> str:
 
 
 def html_bandeau(utilisateur: str, entreprise: str, resume: str) -> str:
-    return (f'<div class="tb-bandeau"><div class="tb-salut">Bonjour {_echapper(utilisateur)} 👋</div>'
-            f'<div class="tb-sous">{_echapper(entreprise)} · {_echapper(resume)}</div></div>')
+    return (f'<div class="tb-bandeau"><div class="tb-salut">{"Hello" if _langue() == "en" else "Bonjour"} {_echapper(utilisateur)} 👋</div>'
+            f'<div class="tb-sous">{_echapper(entreprise)} · {_echapper(T(resume))}</div></div>')
 
 
 def html_kpi(icone: str, titre: str, valeur: str, unite: str = "", note: str = "", couleur: str = "bleu") -> str:
     tc = _COULEURS_TB.get(couleur, _COULEURS_TB["bleu"])
-    u = f'<span class="tb-unite">{_echapper(unite)}</span>' if unite else ""
-    n = f'<div class="tb-note">{_echapper(note)}</div>' if note else ""
+    u = f'<span class="tb-unite">{_echapper(T(unite))}</span>' if unite else ""
+    n = f'<div class="tb-note">{_echapper(T(note))}</div>' if note else ""
     return (f'<div class="tb-kpi" style="--tc:{tc}"><div class="tb-ico">{icone}</div>'
-            f'<div class="tb-titre">{_echapper(titre)}</div><div class="tb-valeur">{_echapper(valeur)}{u}</div>{n}</div>')
+            f'<div class="tb-titre">{_echapper(T(titre))}</div><div class="tb-valeur">{_echapper(valeur)}{u}</div>{n}</div>')
 
 
 def html_grille(cartes: list[str]) -> str:
@@ -217,12 +218,13 @@ def html_surveiller(points: list[tuple[str, int, str]]) -> str:
     morceaux = []
     for texte, nombre, niveau in points:
         niv = niveau if nombre > 0 else "vert"
-        morceaux.append(f'<div class="tb-pastille {niv}"><b>{int(nombre)}</b> {_echapper(texte)}</div>')
+        morceaux.append(f'<div class="tb-pastille {niv}"><b>{int(nombre)}</b> {_echapper(T(texte))}</div>')
     return '<div class="tb-surveiller">' + "".join(morceaux) + "</div>"
 
 
 # ───────────── Signature de l'auteur (projet d'école) ─────────────
-AUTEUR = "Daniel Kouame"
+AUTEUR = "Kouassi Kouame Daniel"
+UID = "25MDA10119"
 PROGRAMME = "MBA Data Science & AI · Chandigarh University, India"
 
 
@@ -230,4 +232,4 @@ def html_signature() -> str:
     return ('<div style="margin:6px 0 12px;padding:12px 14px;border-radius:16px;border:1px solid rgba(255,255,255,.14);'
             'background:linear-gradient(135deg,rgba(10,132,255,.18),rgba(191,90,242,.14));font-size:.82rem;color:#e8edf6;line-height:1.5">'
             f'✍️ Designed &amp; developed by<br><b style="font-size:.98rem">{_html.escape(AUTEUR)}</b><br>'
-            f'<span style="color:#aeb8cc">{_html.escape(PROGRAMME)}</span></div>')
+            f'<span style="color:#aeb8cc">{_html.escape(PROGRAMME)}<br>UID {_html.escape(UID)}</span></div>')

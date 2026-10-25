@@ -9,7 +9,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from sndgir_menu import AUTEUR, PROGRAMME, html_grille, html_kpi, sous_menu
+from sndgir_menu import AUTEUR, PROGRAMME, UID, html_grille, html_kpi, sous_menu
 
 RACINE = Path(__file__).resolve().parent
 TITRE = "SNDGIR & Transit ERP"
@@ -48,7 +48,7 @@ def render_showcase(modele_retard, modele_controle, lire_df, tenant_id: int) -> 
     st.markdown(
         f'<div class="tb-bandeau"><div class="tb-salut">🎓 {TITRE}</div>'
         f'<div class="tb-sous">{SOUS_TITRE}</div>'
-        f'<div class="tb-sous" style="margin-top:10px">✍️ <b>{AUTEUR}</b> · {PROGRAMME}</div></div>',
+        f'<div class="tb-sous" style="margin-top:10px">✍️ <b>{AUTEUR}</b> · UID {UID} · {PROGRAMME}</div></div>',
         unsafe_allow_html=True)
     vue_ensemble, architecture, ia, rigueur, visite, suite = sous_menu(
         "vit", ["🎯 Overview", "🏗️ Architecture", "🧠 AI & ML", "✅ Rigor & ethics", "🧭 5-minute tour", "🚀 Roadmap"])
@@ -152,4 +152,4 @@ def render_showcase(modele_retard, modele_controle, lire_df, tenant_id: int) -> 
                     "2. Retrain the two logistics models on real anonymised data (`donnees_reelles/`) and report honestly whether they beat the baseline.\n"
                     "3. Official request for GUCE / PCS integration (`docs/LETTRE_GUCE.md`).\n"
                     "4. Durable hosting (PostgreSQL) for real customers; full English interface option.")
-        st.caption(f"✍️ {AUTEUR} — {PROGRAMME}")
+        st.caption(f"✍️ {AUTEUR} (UID {UID}) — {PROGRAMME}")

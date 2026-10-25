@@ -21,6 +21,6 @@ V.st.caption = V.st.write = V.st.info = V.st.warning = lambda *a, **k: None
 V.sous_menu = lambda cle, entrees: [True] * len(entrees)          # affiche toutes les sections
 V.render_showcase(voyages.entrainer, douane.entrainer, erp.lire_df, 1)
 tout = " ".join(rendus)
-for mot in ("Daniel Kouame", "Chandigarh", "Error reduction", "Red-lane recall", "System architecture", "Responsible AI", "Roadmap"):
+for mot in ("Kouassi Kouame Daniel", "Chandigarh", "Error reduction", "Red-lane recall", "System architecture", "Responsible AI", "Roadmap"):
     assert mot in tout, mot
 print("VITRINE OK")

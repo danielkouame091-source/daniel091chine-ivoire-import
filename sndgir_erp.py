@@ -690,6 +690,8 @@ _SCHEMA += sndgir_suivi.SCHEMA_SUIVI
 import sndgir_tour  # noqa: E402  (tour de contrôle des expéditions)
 import sndgir_retours  # noqa: E402  (avis des testeurs)
 import sndgir_donnees  # noqa: E402  (droits des personnes)
+import sndgir_i18n  # noqa: E402  (interface English / Français)
+from sndgir_i18n import T  # noqa: E402
 import sndgir_securite  # noqa: E402  (2FA, sauvegardes, mode production)
 
 _SCHEMA += sndgir_tour.SCHEMA_TOUR
@@ -2190,6 +2192,7 @@ def _styles_pdf():
 
 
 def _tableau(donnees: list[list], largeurs: list[float] | None = None):
+    donnees = [[T(c) if isinstance(c, str) else c for c in ligne] for ligne in donnees]
     tableau = Table(donnees, colWidths=largeurs, hAlign="LEFT")
     tableau.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0E1830")),
@@ -2616,6 +2619,9 @@ def construire_messages_ia(question: str, dossier_id: int | None = None,
         donnees.append("DONNÉES TARIFAIRES DU CABINET : " + tarif)
     if donnees:
         systeme += "\n\n=== " + " ".join(donnees) + " ==="
+    if st.session_state.get("langue") == "en":
+        systeme += ("\n\nLANGUAGE: the user interface is in English. Write your whole answer in clear, simple English "
+                    "(keep official French names of documents and offices, with a short English gloss).")
     messages = [{"role": "system", "content": systeme}]
     for q, r in (historique or [])[-4:]:
         messages += [{"role": "user", "content": q}, {"role": "assistant", "content": r}]
@@ -3215,6 +3221,7 @@ def ecran_connexion() -> bool:
 
     colonne_gauche, colonne_milieu, colonne_droite = st.columns([1, 1.2, 1])
     with colonne_milieu:
+        sndgir_i18n.selecteur_langue()
         if st.session_state.get("attente_2fa"):
             fiche_2fa = st.session_state["attente_2fa"]
             with st.form("form_2fa"):
@@ -3279,6 +3286,7 @@ def barre_laterale() -> str:
     nom_tenant = tenant.loc[tenant["id"] == tenant_courant(), "raison_sociale"]
     with st.sidebar:
         st.session_state["entreprise_nom"] = str(nom_tenant.iloc[0]) if not nom_tenant.empty else ""
+        sndgir_i18n.selecteur_langue()
         st.markdown(html_marque(APP_NAME, APP_VERSION), unsafe_allow_html=True)
         st.markdown(html_profil(st.session_state.get("username", "—"), st.session_state.get("user_role", "—"),
                                 nom_tenant.iloc[0] if not nom_tenant.empty else "—"), unsafe_allow_html=True)
@@ -4488,6 +4496,8 @@ def onglet_finai_ia() -> None:
 def main() -> None:
     st.set_page_config(page_title=APP_NAME, page_icon="🏦", layout="wide",
                        initial_sidebar_state="expanded")
+    sndgir_i18n.installer()
+    st.session_state.setdefault("langue", "en" if sndgir_securite.mode_vitrine() else "fr")
     injecter_theme()
     init_db()
 

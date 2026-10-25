@@ -1,6 +1,6 @@
 # SNDGIR & Transit ERP — Project Report
 
-**Author:** Daniel Kouame · MBA Data Science & AI, Chandigarh University, India
+**Author:** Kouassi Kouame Daniel · UID 25MDA10119 · MBA Data Science & AI, Chandigarh University, India
 *(Replace names/dates/course code as required by your submission template.)*
 
 ## Abstract

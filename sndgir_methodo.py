@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import pandas as pd
 import streamlit as st
+import sndgir_i18n
 
 
 def _tableau(metriques: dict, noms: dict) -> pd.DataFrame:
@@ -10,11 +11,28 @@ def _tableau(metriques: dict, noms: dict) -> pd.DataFrame:
                          for k, m in metriques.items() if not k.startswith("_")])
 
 
+def _phrases_bilan_en(ridge, gb, ref, mc) -> list[str]:
+    meilleur = min(ridge, gb)
+    p = [f"Ship delay: mean error of {meilleur:.2f} day(s) versus {ref:.2f} for the simple method "
+         f"(always guessing the average delay), i.e. {100 * (1 - meilleur / ref):.0f}% less error."]
+    if abs(ridge - gb) / max(ridge, gb) < 0.05:
+        p.append("Simple regression and gradient boosting perform almost the same: we keep the simplest explanation.")
+    ref_f1 = mc["Référence (toujours « vert »)"]["f1_macro"]
+    log, gbc = mc["Régression logistique"], mc["Gradient boosting"]
+    p.append(f"Customs risk: macro-F1 {log['f1_macro']:.2f} (regression) versus {ref_f1:.2f} for \"always green\". "
+             f"Red files found: {log['rappel_rouge'] * 100:.0f}% (regression) and {gbc['rappel_rouge'] * 100:.0f}% (boosting).")
+    if gbc["exactitude"] > log["exactitude"] and gbc["rappel_rouge"] < log["rappel_rouge"]:
+        p.append("Boosting has better accuracy but misses more red files: for a risk check we prefer regression here, which finds more of them.")
+    return p
+
+
 def phrases_bilan(mv: dict, mc: dict) -> list[str]:
     """Conclusions écrites À PARTIR des chiffres (jamais figées) : elles changent si les modèles changent."""
     ref = mv["Référence (retard moyen)"]["mae_jours"]
     ridge, gb = mv["Régression Ridge"]["mae_jours"], mv["Gradient boosting"]["mae_jours"]
     meilleur = min(ridge, gb)
+    if sndgir_i18n.langue() == "en":
+        return _phrases_bilan_en(ridge, gb, ref, mc)
     p = [f"Retard du navire : erreur moyenne de {meilleur:.2f} jour(s) contre {ref:.2f} pour la méthode simple "
          f"(retard moyen toujours deviné), soit {100 * (1 - meilleur / ref):.0f} % d'erreur en moins."]
     if abs(ridge - gb) / max(ridge, gb) < 0.05:

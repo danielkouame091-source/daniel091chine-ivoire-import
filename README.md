@@ -2,7 +2,7 @@
 
 **An AI-assisted ERP for customs brokers and accounting firms in Côte d'Ivoire (UEMOA).**
 MBA Data Science & AI — Chandigarh University, India.
-*Designed & developed by Daniel Kouame.*
+*Designed & developed by Kouassi Kouame Daniel (UID 25MDA10119).*
 
 > 🇫🇷 Version française : [README.fr.md](README.fr.md)
 
@@ -15,6 +15,8 @@ One web application that combines
 
 ## Try it
 Live demo (no password, fictitious data only): *see the link given with the submission.*
+**Language:** the whole interface (menus, forms, tables, charts, PDF/Excel exports, AI answers) is shown in English; a 🌐 English / 🇫🇷 Français switch in the sidebar and on the login screen changes it instantly. Translation is display-only (`sndgir_i18n.py` + `i18n_en.py`); `python3 valider_ecrans.py --rapport` walks every screen and lists any text still in French.
+
 The first tile, **🎓 Project Showcase**, is a guided overview in English with live results.
 
 Locally (macOS / Linux):

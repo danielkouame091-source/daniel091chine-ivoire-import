@@ -11,6 +11,8 @@ from datetime import datetime
 
 import pandas as pd
 import streamlit as st
+
+from sndgir_i18n import T, trad_df
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from reportlab.lib import colors
@@ -35,6 +37,7 @@ def _nom_feuille(titre: str) -> str:
 
 
 def df_vers_excel(df: pd.DataFrame, titre: str = "Export") -> bytes:
+    df, titre = trad_df(df), T(titre)
     propre = df.copy()
     for col in propre.columns:
         if not pd.api.types.is_numeric_dtype(propre[col]) and not pd.api.types.is_datetime64_any_dtype(propre[col]):
@@ -66,6 +69,7 @@ def _texte_pdf(valeur) -> str:
 
 
 def df_vers_pdf(df: pd.DataFrame, titre: str = "Export", entreprise: str = "") -> bytes:
+    df, titre = trad_df(df), T(titre)
     tampon = io.BytesIO()
     doc = SimpleDocTemplate(tampon, pagesize=landscape(A4), leftMargin=10 * mm, rightMargin=10 * mm,
                             topMargin=12 * mm, bottomMargin=12 * mm, title=titre)
