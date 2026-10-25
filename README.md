@@ -231,3 +231,12 @@ Onglet « Tour de contrôle » (Transit & Douanes) : toutes les expéditions sur
 du GUCE : e-Voyage, e-Manifest, e-Movement, e-Release), franchise restante, surestaries estimées, crédit documentaire
 bloqué, solde client, score de risque par RÈGLES de gestion (pas d'IA) et message WhatsApp prêt pour le client.
 Pas de connexion automatique au PCS : jalons saisis à la main. Test : `python3 valider_suivi.py`.
+
+## IA logistique (onglet « IA logistique », Transit & Douanes)
+- **Retard probable du navire** : régression + classifieur appris sur des voyages simulés, comparés à une référence
+  simple (jeu de test mis de côté, intervalle d'incertitude). Code : `finai/logistique/voyages.py`.
+- **Risque de contrôle en douane** : pré-évaluation (voie verte / orange / rouge) avec les 3 raisons principales en
+  français. Les critères réels de la douane sont confidentiels : outil de préparation, jamais de prédiction officielle.
+  Code : `finai/logistique/douane.py`.
+- Les données sont SIMULÉES. Pour de vraies données, remplacer `generer_voyages` / `generer_dossiers` (mêmes colonnes).
+- Test : `python3 valider_logistique.py`.

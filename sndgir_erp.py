@@ -3375,10 +3375,10 @@ def onglet_transit() -> None:
         return
     st.subheader("🚢 Transit, Import-Export & Douanes")
     (onglet_dossiers, onglet_calcul, onglet_manifestes, onglet_surestaries, onglet_documents,
-     onglet_tarif, onglet_parcours, onglet_suivi, onglet_revient, onglet_tour) = st.tabs(
+     onglet_tarif, onglet_parcours, onglet_suivi, onglet_revient, onglet_tour, onglet_ial) = st.tabs(
         ["Dossiers", "Calculateur douanier", "Manifestes & B/L", "Surestaries", "Documents PDF",
          "Tarif & taxes", "Parcours officiel & FNE", "Suivi marchandise & crédit documentaire",
-         "Prix de revient", "Tour de contrôle"])
+         "Prix de revient", "Tour de contrôle", "IA logistique"])
 
     with onglet_dossiers:
         if exiger("transit.creer"):
@@ -3872,6 +3872,14 @@ def onglet_transit() -> None:
     with onglet_tour:
         sndgir_tour.render_tour(lire_df, connexion, journaliser, exiger, tenant_courant(),
                                 st.session_state.get("username", "système"), sndgir_suivi.etat_expedition)
+
+    with onglet_ial:
+        try:
+            import sndgir_logistique
+            sndgir_logistique.render_ia_logistique(lire_df, tenant_courant())
+        except Exception as exc:
+            st.error("Le module d'IA logistique n'est pas disponible.")
+            st.code(str(exc))
 
     with onglet_revient:
         sndgir_suivi.render_prix_revient(lire_df, tenant_courant())
