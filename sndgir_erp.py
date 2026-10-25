@@ -689,6 +689,7 @@ _SCHEMA += sndgir_suivi.SCHEMA_SUIVI
 
 import sndgir_tour  # noqa: E402  (tour de contrôle des expéditions)
 import sndgir_retours  # noqa: E402  (avis des testeurs)
+import sndgir_donnees  # noqa: E402  (droits des personnes)
 import sndgir_securite  # noqa: E402  (2FA, sauvegardes, mode production)
 
 _SCHEMA += sndgir_tour.SCHEMA_TOUR
@@ -4300,11 +4301,13 @@ def onglet_administration() -> None:
     if not exiger("*"):
         return
     st.subheader("🛡️ Administration, sécurité & piste d'audit")
-    onglet_tenants, onglet_utilisateurs, onglet_audit, onglet_taux, onglet_retours, onglet_secu = sous_menu(
+    onglet_tenants, onglet_utilisateurs, onglet_audit, onglet_taux, onglet_retours, onglet_secu, onglet_donnees = sous_menu(
         "admin", ["🏢 Entreprises", "👥 Utilisateurs", "🔐 Piste d'audit", "💱 Taux de change", "💬 Retours d'essai",
-                  "🛡️ Sécurité & sauvegarde"])
+                  "🛡️ Sécurité & sauvegarde", "👤 Données personnelles"])
     if onglet_secu:
         onglet_securite()
+    if onglet_donnees:
+        sndgir_donnees.render_donnees(lire_df, connexion, journaliser, tenant_courant(), st)
     if onglet_retours:
         sndgir_retours.render_synthese(lire_df, tenant_courant(), bouton_export)
     if onglet_tenants:

@@ -261,3 +261,10 @@ Analyse financière IA…) sont remplacés par de petites tuiles carrées, comme
 - Test : `python3 valider_securite.py` (vecteurs officiels RFC 6238).
 
 **Limites honnêtes** : sur Streamlit Cloud le disque est temporaire (la base peut être remise à zéro) — pour de vrais clients, hébergez sur un serveur avec disque durable. Pas de blocage par adresse IP, pas de codes de secours 2FA.
+
+## 👤 Données personnelles (étape 6)
+
+*Administration → 👤 Données personnelles* : export Excel de tout ce que l'on sait d'un client (droit d'accès) et
+anonymisation définitive (droit à l'effacement) en gardant montants et références comptables.
+Modèles (registre, texte d'information, procédure) : `docs/PROTECTION_DONNEES.md` — **à faire valider par un juriste**
+(loi n°2013-450, ARTCI). Test : `python3 valider_donnees.py`.
