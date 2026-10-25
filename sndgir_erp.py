@@ -680,7 +680,8 @@ CREATE TABLE IF NOT EXISTS fne_factures (
 """
 
 
-from sndgir_menu import CSS_SOUS_MENU, sous_menu  # noqa: E402  (sous-menus en tuiles)
+from sndgir_menu import (CSS_BARRE, CSS_SOUS_MENU, html_alerte_demo, html_audit, html_marque,  # noqa: E402
+                         html_profil, sous_menu)
 import sndgir_suivi  # noqa: E402  (suivi des expéditions, crédit documentaire, prix de revient)
 
 _SCHEMA += sndgir_suivi.SCHEMA_SUIVI
@@ -3090,7 +3091,7 @@ section[data-testid="stSidebar"] hr{border-color:rgba(255,255,255,.07);}
 
 def injecter_theme() -> None:
     st.markdown(CSS_THEME_3D, unsafe_allow_html=True)
-    st.markdown(f"<style>{CSS_SOUS_MENU}</style>", unsafe_allow_html=True)
+    st.markdown(f"<style>{CSS_SOUS_MENU}{CSS_BARRE}</style>", unsafe_allow_html=True)
 
 
 def carte_kpi(titre: str, valeur: str, sous_texte: str = "", niveau: str = "bleu") -> None:
@@ -3195,27 +3196,27 @@ def ecran_connexion() -> bool:
 
 
 def barre_laterale() -> str:
-    """Barre latérale : identité, rôle, clés API et déconnexion."""
+    """Barre latérale : marque, carte de profil, état de sécurité, réglages repliés et déconnexion."""
     tenant = lister_tenants()
     nom_tenant = tenant.loc[tenant["id"] == tenant_courant(), "raison_sociale"]
     with st.sidebar:
-        st.markdown(f"### 🏦 {APP_NAME}")
-        st.markdown(f"**Entreprise :** {nom_tenant.iloc[0] if not nom_tenant.empty else '—'}")
-        st.markdown(f"**Utilisateur :** {st.session_state.get('username', '—')}")
-        st.markdown(f"**Rôle :** {st.session_state.get('user_role', '—')}")
-        st.divider()
-        st.text_input("Clé API Groq (session)", type="password", key="groq_api_key_input",
-                      value=st.session_state.get("groq_api_key", ""))
-        st.session_state["groq_api_key"] = st.session_state.get("groq_api_key_input", "")
-        st.divider()
+        st.markdown(html_marque(APP_NAME, APP_VERSION), unsafe_allow_html=True)
+        st.markdown(html_profil(st.session_state.get("username", "—"), st.session_state.get("user_role", "—"),
+                                nom_tenant.iloc[0] if not nom_tenant.empty else "—"), unsafe_allow_html=True)
+        integre, nb_lignes, message = verifier_audit()
+        st.markdown(html_audit(integre, nb_lignes), unsafe_allow_html=True)
+        if not integre:
+            st.caption(f"⚠️ {message}")
         if st.session_state.get("user_role") == "Administrateur Système":
             if "comptes_demo" not in st.session_state:
                 st.session_state["comptes_demo"] = comptes_mot_de_passe_demo()
             if st.session_state["comptes_demo"]:
-                st.warning("⚠️ Mots de passe de démonstration encore actifs : "
-                           + ", ".join(st.session_state["comptes_demo"])
-                           + ". Changez-les (Administration → Utilisateurs).")
-        with st.expander("🔑 Changer mon mot de passe"):
+                st.markdown(html_alerte_demo(st.session_state["comptes_demo"]), unsafe_allow_html=True)
+        with st.expander("⚙️ Réglages"):
+            st.text_input("Clé API Groq (session)", type="password", key="groq_api_key_input",
+                          value=st.session_state.get("groq_api_key", ""))
+            st.session_state["groq_api_key"] = st.session_state.get("groq_api_key_input", "")
+            st.markdown("**🔑 Changer mon mot de passe**")
             with st.form("form_mon_mdp"):
                 ancien = st.text_input("Mot de passe actuel", type="password")
                 nouveau = st.text_input(
@@ -3229,10 +3230,6 @@ def barre_laterale() -> str:
                     st.success("Mot de passe modifié.")
                 except ValueError as exc:
                     st.error(str(exc))
-        st.divider()
-        integre, nb_lignes, message = verifier_audit()
-        st.caption(f"Audit : {nb_lignes} entrées")
-        st.caption(message if integre else f"⚠️ {message}")
         if st.button("Se déconnecter", use_container_width=True):
             journaliser("deconnexion", "utilisateurs", st.session_state.get("username", ""), "")
             st.session_state.clear()
