@@ -54,6 +54,9 @@ class FauxSt:
         return lambda *a, **k: FauxSt.journal.append((nom, a[0] if a else None))
 fs = FauxSt(); mod = types.ModuleType("streamlit")
 mod.__dict__.update({n: getattr(fs, n) for n in ("columns", "tabs", "selectbox", "slider", "number_input", "text_input", "cache_resource", "metric")})
+mod.session_state = {}
+mod.container = lambda *a, **k: FauxSt()
+mod.button = lambda *a, **k: False
 mod.__getattr__ = lambda nom: (lambda *a, **k: FauxSt.journal.append((nom, a[0] if a else None)))
 sys.modules["streamlit"] = mod
 import sndgir_logistique as L
@@ -68,6 +71,10 @@ with erp.connexion() as c:
 FauxSt.journal.clear()
 L.render_ia_logistique(erp.lire_df, 1)
 etiq = [x[0] for x in FauxSt.journal]
-assert any("Durée annoncée" in str(e) for e in etiq) and any("Voie" in str(e) for e in etiq), etiq
+assert any("Durée annoncée" in str(e) for e in etiq), etiq
+mod.session_state["sm_actif_ial"] = 1            # deuxième section du sous-menu
+FauxSt.journal.clear(); L.render_ia_logistique(erp.lire_df, 1)
+etiq += [x[0] for x in FauxSt.journal]
+assert any("Voie" in str(e) for e in etiq), etiq
 assert not any(e == "error" for e in etiq), FauxSt.journal
 print("IA LOGISTIQUE OK")

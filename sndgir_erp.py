@@ -680,6 +680,7 @@ CREATE TABLE IF NOT EXISTS fne_factures (
 """
 
 
+from sndgir_menu import CSS_SOUS_MENU, sous_menu  # noqa: E402  (sous-menus en tuiles)
 import sndgir_suivi  # noqa: E402  (suivi des expéditions, crédit documentaire, prix de revient)
 
 _SCHEMA += sndgir_suivi.SCHEMA_SUIVI
@@ -3089,6 +3090,7 @@ section[data-testid="stSidebar"] hr{border-color:rgba(255,255,255,.07);}
 
 def injecter_theme() -> None:
     st.markdown(CSS_THEME_3D, unsafe_allow_html=True)
+    st.markdown(f"<style>{CSS_SOUS_MENU}</style>", unsafe_allow_html=True)
 
 
 def carte_kpi(titre: str, valeur: str, sous_texte: str = "", niveau: str = "bleu") -> None:
@@ -3288,10 +3290,10 @@ def onglet_comptabilite() -> None:
     if not exiger("compta.view"):
         return
     st.subheader("📒 Comptabilité SYSCOHADA révisé")
-    onglet_ecriture, onglet_balance, onglet_livre, onglet_journaux, onglet_etats = st.tabs(
-        ["Saisie d'écriture", "Balance générale", "Grand livre", "Journaux", "États financiers"]
-    )
-    with onglet_ecriture:
+    onglet_ecriture, onglet_balance, onglet_livre, onglet_journaux, onglet_etats = sous_menu(
+        "compta", ["✍️ Saisie d'écriture", "⚖️ Balance générale", "📖 Grand livre", "🗂️ Journaux",
+                   "📑 États financiers"])
+    if onglet_ecriture:
         if exiger("compta.saisie"):
             st.caption("Partie double stricte : débits = crédits, sinon l'écriture est refusée.")
             plan = lire_df("SELECT compte, libelle FROM plan_comptable ORDER BY compte")
@@ -3318,7 +3320,7 @@ def onglet_comptabilite() -> None:
                     st.success(f"Écriture {piece} enregistrée (journal {journal}).")
                 except ErreurComptable as exc:
                     st.error(str(exc))
-    with onglet_balance:
+    if onglet_balance:
         balance = balance_generale()
         if balance.empty:
             st.info("Aucune écriture enregistrée.")
@@ -3329,7 +3331,7 @@ def onglet_comptabilite() -> None:
             else:
                 st.error(f"⚠️ Balance déséquilibrée (écart {ecart:,.0f} FCFA).")
             st.dataframe(balance, use_container_width=True)
-    with onglet_livre:
+    if onglet_livre:
         plan = lire_df("SELECT compte, libelle FROM plan_comptable ORDER BY compte")
         if plan.empty:
             st.info("Plan comptable vide.")
@@ -3340,10 +3342,10 @@ def onglet_comptabilite() -> None:
                                          format_func=lambda c: libelles_livre[c],
                                          key="livre_compte")
             st.dataframe(grand_livre(compte_filtre), use_container_width=True)
-    with onglet_journaux:
+    if onglet_journaux:
         code = st.selectbox("Journal", ["ACQ", "VTE", "BAN", "OD"], key="choix_journal")
         st.dataframe(journal_ecritures(code), use_container_width=True)
-    with onglet_etats:
+    if onglet_etats:
         if exiger("etats.view"):
             etats = etats_financiers()
             colonne_gauche, colonne_droite = st.columns(2)
@@ -3375,12 +3377,13 @@ def onglet_transit() -> None:
         return
     st.subheader("🚢 Transit, Import-Export & Douanes")
     (onglet_dossiers, onglet_calcul, onglet_manifestes, onglet_surestaries, onglet_documents,
-     onglet_tarif, onglet_parcours, onglet_suivi, onglet_revient, onglet_tour, onglet_ial) = st.tabs(
-        ["Dossiers", "Calculateur douanier", "Manifestes & B/L", "Surestaries", "Documents PDF",
-         "Tarif & taxes", "Parcours officiel & FNE", "Suivi marchandise & crédit documentaire",
-         "Prix de revient", "Tour de contrôle", "IA logistique"])
+     onglet_tarif, onglet_parcours, onglet_suivi, onglet_revient, onglet_tour, onglet_ial) = sous_menu(
+        "transit", ["📁 Dossiers", "🧮 Calculateur douanier", "📜 Manifestes & B/L", "⏱️ Surestaries",
+                    "🖨️ Documents PDF", "🏷️ Tarif & taxes", "🧭 Parcours officiel & FNE",
+                    "📍 Suivi marchandise & crédit", "💰 Prix de revient", "🗼 Tour de contrôle",
+                    "🤖 IA logistique"])
 
-    with onglet_dossiers:
+    if onglet_dossiers:
         if exiger("transit.creer"):
             with st.expander("➕ Nouveau dossier d'importation", expanded=False):
                 articles = lire_df(
@@ -3511,7 +3514,7 @@ def onglet_transit() -> None:
                             st.success("Pièce enregistrée.")
                             st.rerun()
 
-    with onglet_calcul:
+    if onglet_calcul:
         st.caption("Simulation des droits et taxes par régime douanier (TVA paramétrable).")
         colonnes = st.columns(4)
         with colonnes[0]:
@@ -3565,7 +3568,7 @@ def onglet_transit() -> None:
         st.markdown(f"Score {analyse['score']} → {badge_canal(analyse['canal'])} "
                     f"{analyse['libelle_canal']}", unsafe_allow_html=True)
 
-    with onglet_manifestes:
+    if onglet_manifestes:
         colonne_gauche, colonne_droite = st.columns(2)
         with colonne_gauche:
             st.markdown("##### Nouveau manifeste maritime / aérien")
@@ -3627,7 +3630,7 @@ def onglet_transit() -> None:
                 st.success("Manifestes apurés automatiquement.")
                 st.rerun()
 
-    with onglet_surestaries:
+    if onglet_surestaries:
         st.caption("Surestaries portuaires : pénalités journalières armateur (USD → FCFA).")
         colonnes = st.columns(4)
         with colonnes[0]:
@@ -3669,7 +3672,7 @@ def onglet_transit() -> None:
             " WHERE tenant_id=? ORDER BY id DESC", (tenant_courant(),),
         ), use_container_width=True)
 
-    with onglet_documents:
+    if onglet_documents:
         dossiers = lister_dossiers()
         if dossiers.empty:
             st.info("Aucun dossier : créez-en un pour générer les documents officiels.")
@@ -3730,7 +3733,7 @@ def onglet_transit() -> None:
                         except ErreurComptable as exc:
                             st.error(str(exc))
 
-    with onglet_tarif:
+    if onglet_tarif:
         peut_gerer = a_permission(st.session_state.get("user_role", ""), "tarif.gerer")
         st.caption("Recherche par début de code SH (chiffres) ou par désignation (texte).")
         recherche = st.text_input("Recherche dans le tarif", key="tarif_recherche")
@@ -3865,15 +3868,15 @@ def onglet_transit() -> None:
                     else:
                         st.rerun()
 
-    with onglet_suivi:
+    if onglet_suivi:
         sndgir_suivi.render_suivi(lire_df, connexion, journaliser, exiger, tenant_courant(),
                                   st.session_state.get("username", "système"))
 
-    with onglet_tour:
+    if onglet_tour:
         sndgir_tour.render_tour(lire_df, connexion, journaliser, exiger, tenant_courant(),
                                 st.session_state.get("username", "système"), sndgir_suivi.etat_expedition)
 
-    with onglet_ial:
+    if onglet_ial:
         try:
             import sndgir_logistique
             sndgir_logistique.render_ia_logistique(lire_df, tenant_courant())
@@ -3881,10 +3884,10 @@ def onglet_transit() -> None:
             st.error("Le module d'IA logistique n'est pas disponible.")
             st.code(str(exc))
 
-    with onglet_revient:
+    if onglet_revient:
         sndgir_suivi.render_prix_revient(lire_df, tenant_courant())
 
-    with onglet_parcours:
+    if onglet_parcours:
         dossiers_p = lister_dossiers()
         if dossiers_p.empty:
             st.info("Aucun dossier : créez-en un pour suivre son parcours officiel.")
@@ -3965,10 +3968,9 @@ def onglet_transit() -> None:
 
 def onglet_ia() -> None:
     st.subheader("🤖 Assistant IA & OCR / IDP")
-    onglet_assistant, onglet_ocr, onglet_communications = st.tabs(
-        ["Assistant fiscal & douanier", "Extraction OCR de factures", "Communications"]
-    )
-    with onglet_assistant:
+    onglet_assistant, onglet_ocr, onglet_communications = sous_menu(
+        "ia", ["💬 Assistant fiscal & douanier", "🔎 Extraction OCR de factures", "✉️ Communications"])
+    if onglet_assistant:
         st.caption("Assistant expert douane, import-export, fiscalité DGI et SYSCOHADA. Il s'appuie "
                    "sur une base de textes (socle intégré + vos décrets, arrêtés et circulaires) et "
                    "n'invente pas de références : sans source, il le dit.")
@@ -4060,7 +4062,7 @@ def onglet_ia() -> None:
                             st.error(str(exc))
                         else:
                             st.rerun()
-    with onglet_ocr:
+    if onglet_ocr:
         if not exiger("ocr.view"):
             st.stop()
         st.caption("Collez le texte OCR d'une facture fournisseur : extraction + contrôle.")
@@ -4096,7 +4098,7 @@ def onglet_ia() -> None:
             else:
                 st.success("✅ Aucune discordance significative détectée.")
             enregistrer_extraction_ocr("saisie_manuelle", extraction, controle)
-    with onglet_communications:
+    if onglet_communications:
         if not exiger("communication.rediger"):
             st.stop()
         st.caption("Les brouillons restent « En attente » jusqu'à validation humaine explicite.")
@@ -4147,10 +4149,9 @@ def onglet_administration() -> None:
     if not exiger("*"):
         return
     st.subheader("🛡️ Administration, sécurité & piste d'audit")
-    onglet_tenants, onglet_utilisateurs, onglet_audit, onglet_taux = st.tabs(
-        ["Entreprises (tenants)", "Utilisateurs", "Piste d'audit", "Taux de change"]
-    )
-    with onglet_tenants:
+    onglet_tenants, onglet_utilisateurs, onglet_audit, onglet_taux = sous_menu(
+        "admin", ["🏢 Entreprises", "👥 Utilisateurs", "🔐 Piste d'audit", "💱 Taux de change"])
+    if onglet_tenants:
         with st.form("form_tenant"):
             colonnes = st.columns(3)
             with colonnes[0]:
@@ -4171,7 +4172,7 @@ def onglet_administration() -> None:
             except sqlite3.IntegrityError:
                 st.error("Ce slug existe déjà.")
         st.dataframe(lister_tenants(), use_container_width=True)
-    with onglet_utilisateurs:
+    if onglet_utilisateurs:
         with st.form("form_utilisateur"):
             colonnes = st.columns(3)
             with colonnes[0]:
@@ -4225,7 +4226,7 @@ def onglet_administration() -> None:
                     st.success(f"Mot de passe de {uname} réinitialisé.")
                 except ValueError as exc:
                     st.error(str(exc))
-    with onglet_audit:
+    if onglet_audit:
         integre, nb_lignes, message = verifier_audit()
         if integre:
             st.success(f"{message} ({nb_lignes} entrées)")
@@ -4235,7 +4236,7 @@ def onglet_administration() -> None:
             "SELECT ts, username, role, ip, action, entite, details FROM audit_logs"
             " ORDER BY id DESC LIMIT 500"
         ), use_container_width=True)
-    with onglet_taux:
+    if onglet_taux:
         colonnes = st.columns(3)
         with colonnes[0]:
             devise = st.text_input("Devise", value="USD")

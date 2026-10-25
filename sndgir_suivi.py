@@ -16,6 +16,8 @@ from datetime import datetime
 import pandas as pd
 import streamlit as st
 
+from sndgir_menu import sous_menu
+
 SCHEMA_SUIVI = """
 CREATE TABLE IF NOT EXISTS expeditions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -126,10 +128,10 @@ def render_suivi(lire_df, connexion, journaliser, exiger, tenant_id: int, userna
                "la date d'arrivée est une estimation.")
     dossiers = lire_df("SELECT reference, client FROM dossiers WHERE tenant_id=? ORDER BY id DESC", (tenant_id,))
     expeditions = lire_df("SELECT * FROM expeditions WHERE tenant_id=? ORDER BY id DESC", (tenant_id,))
-    t_new, t_pos, t_suivi, t_lc = st.tabs(["Nouvelle expédition", "Ajouter une position", "Suivi jusqu'à Abidjan",
-                                          "Crédit documentaire"])
+    t_new, t_pos, t_suivi, t_lc = sous_menu("suivi", ["➕ Nouvelle expédition", "📡 Ajouter une position",
+                                                       "🗺️ Suivi jusqu'à Abidjan", "🏦 Crédit documentaire"])
 
-    with t_new:
+    if t_new:
         if exiger("transit.creer"):
             with st.form("form_expedition"):
                 c = st.columns(2)
@@ -173,7 +175,7 @@ def render_suivi(lire_df, connexion, journaliser, exiger, tenant_id: int, userna
                                                  f" ({expeditions.loc[expeditions['id'] == i, 'origine'].iloc[0]})")
         return expeditions[expeditions["id"] == eid].iloc[0].to_dict()
 
-    with t_pos:
+    if t_pos:
         exp = choisir("sel_pos")
         if exp and exiger("transit.creer"):
             with st.form("form_position"):
@@ -198,7 +200,7 @@ def render_suivi(lire_df, connexion, journaliser, exiger, tenant_id: int, userna
                     except ValueError as exc:
                         st.error(str(exc))
 
-    with t_suivi:
+    if t_suivi:
         exp = choisir("sel_suivi")
         if exp:
             pos = lire_df("SELECT * FROM positions_expedition WHERE tenant_id=? AND expedition_id=? ORDER BY date_position",
@@ -226,7 +228,7 @@ def render_suivi(lire_df, connexion, journaliser, exiger, tenant_id: int, userna
                              use_container_width=True)
                 st.caption("Estimation à vol d'oiseau : la route maritime réelle est plus longue.")
 
-    with t_lc:
+    if t_lc:
         exp = choisir("sel_lc")
         lcs = lire_df("SELECT * FROM credits_documentaires WHERE tenant_id=? ORDER BY id DESC", (tenant_id,))
         if exp and exiger("transit.creer"):

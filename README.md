@@ -240,3 +240,8 @@ Pas de connexion automatique au PCS : jalons saisis à la main. Test : `python3 
   Code : `finai/logistique/douane.py`.
 - Les données sont SIMULÉES. Pour de vraies données, remplacer `generer_voyages` / `generer_dossiers` (mêmes colonnes).
 - Test : `python3 valider_logistique.py`.
+
+## Sous-menus en tuiles
+Les onglets à l'intérieur de chaque grande tuile (Transit & Douanes, Comptabilité, IA & OCR, Administration,
+Analyse financière IA…) sont remplacés par de petites tuiles carrées, comme un écran de téléphone. Code :
+`sndgir_menu.py` (fonction `sous_menu`). Seule la section choisie est affichée et calculée.

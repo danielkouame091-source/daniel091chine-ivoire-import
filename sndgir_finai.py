@@ -14,6 +14,8 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
+from sndgir_menu import sous_menu
+
 try:
     from finai.accounting.scenarios import Choc, comparer_scenarios, sensibilite_tornado
     from finai.accounting.standards import ZONES, indicateurs_par_norme
@@ -166,18 +168,17 @@ def onglet_finai(lire_df, tenant_id: int, exiger) -> None:
     st.caption("Les chiffres viennent de votre grand livre. Le bilan est reconstitué par approximation : "
                "à faire valider par l'expert-comptable. Les modèles d'IA apprennent sur des données SIMULÉES.")
 
-    onglets = st.tabs(["📊 Diagnostic", "🌍 Normes", "🔮 Et si ?", "🕵️ Anomalies", "💵 Trésorerie", "📝 Textes", "🎯 Solvabilité"])
+    onglets = sous_menu("finai", ["📊 Diagnostic", "🌍 Normes", "🔮 Et si ?", "🕵️ Anomalies", "💵 Trésorerie", "📝 Textes", "🎯 Solvabilité"])
 
     if ec.empty:
-        for o in onglets[:2] + onglets[2:4]:
-            with o:
-                st.info("Aucune écriture comptable pour cette période. Saisissez des écritures dans « Comptabilité ».")
+        if any(onglets[:4]):
+            st.info("Aucune écriture comptable pour cette période. Saisissez des écritures dans « Comptabilité ».")
         s = None
     else:
         s = statement_depuis_ecritures(ec)
 
     # ── 1. Diagnostic ──
-    with onglets[0]:
+    if onglets[0]:
         if s is not None:
             res = pipeline.diagnostic_entreprise(s, zone)
             d = res["diagnostic"]
@@ -203,7 +204,7 @@ def onglet_finai(lire_df, tenant_id: int, exiger) -> None:
                 st.caption(f"Altman Z'' : {d['altman']['z']:.2f} → zone {d['altman']['zone']}")
 
     # ── 2. Normes ──
-    with onglets[1]:
+    if onglets[1]:
         if s is not None:
             comp = indicateurs_par_norme(s)
             tab = pd.DataFrame(comp).T.round(3)
@@ -211,7 +212,7 @@ def onglet_finai(lire_df, tenant_id: int, exiger) -> None:
             st.caption("Retraitements IFRS 16 / US GAAP approximatifs : indicatifs, pas des comptes audités.")
 
     # ── 3. Et si ? ──
-    with onglets[2]:
+    if onglets[2]:
         if s is not None:
             x = st.columns(3)
             ventes = x[0].slider("Ventes (%)", -50, 50, -10, key="finai_v")
@@ -224,7 +225,7 @@ def onglet_finai(lire_df, tenant_id: int, exiger) -> None:
             st.dataframe(torn.round(2), hide_index=True, use_container_width=True)
 
     # ── 4. Anomalies ──
-    with onglets[3]:
+    if onglets[3]:
         if s is not None:
             tx = _montants_transactions(ec)
             if len(tx) < 30:
@@ -244,7 +245,7 @@ def onglet_finai(lire_df, tenant_id: int, exiger) -> None:
                              hide_index=True, use_container_width=True)
 
     # ── 5. Trésorerie ──
-    with onglets[4]:
+    if onglets[4]:
         treso = ec[ec["compte"].astype(str).str.match(r"^5[0-8]")].copy() if not ec.empty else pd.DataFrame()
         serie = None
         if not treso.empty:
@@ -265,7 +266,7 @@ def onglet_finai(lire_df, tenant_id: int, exiger) -> None:
             st.caption("L'intervalle est une estimation prudente mais probablement trop étroite.")
 
     # ── 6. Textes ──
-    with onglets[5]:
+    if onglets[5]:
         st.markdown("**Classer un libellé d'écriture dans un compte SYSCOHADA**")
         lib = st.text_input("Libellé", "Facture vente client Abidjan marchandises", key="finai_lib")
         if st.button("Classer", key="finai_cl"):
@@ -282,7 +283,7 @@ def onglet_finai(lire_df, tenant_id: int, exiger) -> None:
                 st.write("Termes repérés : " + ", ".join(r["termes"]))
 
     # ── 7. Solvabilité ──
-    with onglets[6]:
+    if onglets[6]:
         if s is None:
             st.info("Aucune écriture pour cette période.")
         else:

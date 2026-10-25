@@ -10,6 +10,8 @@ from datetime import date, timedelta
 import pandas as pd
 import streamlit as st
 
+from sndgir_menu import sous_menu
+
 try:
     from finai.logistique import douane, voyages
     LOG_OK, LOG_ERREUR = True, ""
@@ -40,9 +42,9 @@ def render_ia_logistique(lire_df, tenant_id: int) -> None:
         return
     st.caption("Les modèles ont appris sur des données SIMULÉES : ils montrent la méthode, pas la réalité. "
                "Avec de vrais voyages et de vrais dossiers, on remplace les données et le reste ne change pas.")
-    t_retard, t_ctrl = st.tabs(["Retard probable du navire", "Risque de contrôle en douane"])
+    t_retard, t_ctrl = sous_menu("ial", ["⏳ Retard du navire", "🛃 Risque de contrôle"])
 
-    with t_retard:
+    if t_retard:
         exps = lire_df("SELECT id, dossier_ref, origine FROM expeditions WHERE tenant_id=? ORDER BY id DESC", (tenant_id,))
         origines = list(voyages.ORIGINES)
         defaut_o, ref_exp = 0, None
@@ -84,7 +86,7 @@ def render_ia_logistique(lire_df, tenant_id: int) -> None:
                    f"sur {cl['n_test']} voyages. Sur ces données simulées, la régression simple fait aussi bien que le "
                    f"boosting, parce que les règles de simulation sont presque linéaires.")
 
-    with t_ctrl:
+    if t_ctrl:
         dos = lire_df("SELECT reference, client, code_sh, valeur_caf_xof, regime, quantite, article FROM dossiers "
                       "WHERE tenant_id=? ORDER BY id DESC", (tenant_id,))
         sel = None
