@@ -3435,17 +3435,42 @@ def onglet_administration() -> None:
 # ══════════════════════════════════════════════════════════════════════════════
 # POINT D'ENTRÉE STREAMLIT
 # ══════════════════════════════════════════════════════════════════════════════
+def acces_direct_actif() -> bool:
+    """Mode local : ouverture sans mot de passe, activé seulement par SNDGIR_ACCES_DIRECT=1."""
+    return os.getenv("SNDGIR_ACCES_DIRECT", "").lower() in ("1", "true", "oui")
+
+
+def ouvrir_session_directe() -> bool:
+    """Ouvre la session du premier administrateur trouvé (usage personnel, en local)."""
+    admin = lire_df(
+        "SELECT tenant_id, username, role FROM utilisateurs WHERE role = ? AND actif = 1 "
+        "ORDER BY tenant_id, id LIMIT 1", ("Administrateur Système",))
+    if admin.empty:
+        return False
+    ligne = admin.iloc[0]
+    st.session_state.update({"authentifie": True, "tenant_id": int(ligne["tenant_id"]),
+                             "username": str(ligne["username"]), "user_role": str(ligne["role"]),
+                             "acces_direct": True})
+    return True
+
+
 def main() -> None:
     st.set_page_config(page_title=APP_NAME, page_icon="🏦", layout="wide",
                        initial_sidebar_state="expanded")
     injecter_theme()
     init_db()
 
+    if not st.session_state.get("authentifie") and acces_direct_actif():
+        ouvrir_session_directe()
+
     if not st.session_state.get("authentifie"):
         ecran_connexion()
         return
 
     role = barre_laterale()
+    if st.session_state.get("acces_direct"):
+        st.sidebar.warning("Accès direct sans mot de passe : à utiliser seulement sur votre "
+                           "ordinateur, jamais sur internet.")
     st.title(f"🏦 {APP_NAME}")
     st.caption(f"Version {APP_VERSION} · rôle « {role} » · données isolées par entreprise")
 

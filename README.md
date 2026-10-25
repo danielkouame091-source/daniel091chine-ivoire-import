@@ -38,6 +38,14 @@ python3 valider_sndgir.py
 > L'écran de connexion n'affiche ces identifiants que si la variable d'environnement
 > `SNDGIR_DEMO=1` est définie (`SNDGIR_DEMO=1 streamlit run sndgir_erp.py`).
 
+### Ouvrir sans mot de passe (usage personnel, sur votre ordinateur)
+
+```bash
+SNDGIR_ACCES_DIRECT=1 streamlit run sndgir_erp.py
+```
+L'application s'ouvre directement avec le compte administrateur. **Ne jamais utiliser ce mode
+sur internet** : sans cette option, la connexion reste obligatoire.
+
 ---
 
 ## 🧩 Périmètre fonctionnel
