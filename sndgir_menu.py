@@ -219,3 +219,15 @@ def html_surveiller(points: list[tuple[str, int, str]]) -> str:
         niv = niveau if nombre > 0 else "vert"
         morceaux.append(f'<div class="tb-pastille {niv}"><b>{int(nombre)}</b> {_echapper(texte)}</div>')
     return '<div class="tb-surveiller">' + "".join(morceaux) + "</div>"
+
+
+# ───────────── Signature de l'auteur (projet d'école) ─────────────
+AUTEUR = "Daniel Kouame"
+PROGRAMME = "MBA Data Science & AI · Chandigarh University, India"
+
+
+def html_signature() -> str:
+    return ('<div style="margin:6px 0 12px;padding:12px 14px;border-radius:16px;border:1px solid rgba(255,255,255,.14);'
+            'background:linear-gradient(135deg,rgba(10,132,255,.18),rgba(191,90,242,.14));font-size:.82rem;color:#e8edf6;line-height:1.5">'
+            f'✍️ Designed &amp; developed by<br><b style="font-size:.98rem">{_html.escape(AUTEUR)}</b><br>'
+            f'<span style="color:#aeb8cc">{_html.escape(PROGRAMME)}</span></div>')

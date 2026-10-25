@@ -130,3 +130,16 @@ def mot_de_passe_admin_initial(minimum: int = 10) -> str:
             f"{minimum} caractères) avant le premier lancement. "
             "Exemple : export SNDGIR_ADMIN_MDP='MonMotDePasse2026!'")
     return mdp
+
+
+def mode_vitrine() -> bool:
+    """Mode « vitrine » (projet d'école) : ouverture sans mot de passe, données fictives uniquement.
+
+    Actif si SNDGIR_VITRINE=1, ou si le fichier `.vitrine` existe à la racine du projet.
+    Jamais actif en production (SNDGIR_PRODUCTION=1), même si le fichier est présent.
+    """
+    if mode_production():
+        return False
+    if os.getenv("SNDGIR_VITRINE", "").lower() in ("1", "true", "oui"):
+        return True
+    return (Path(__file__).resolve().parent / ".vitrine").exists()

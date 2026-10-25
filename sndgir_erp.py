@@ -681,7 +681,7 @@ CREATE TABLE IF NOT EXISTS fne_factures (
 
 
 from sndgir_export import bouton_export  # noqa: E402  (exports Excel / PDF)
-from sndgir_menu import (CSS_TABLEAU, html_bandeau, html_grille, html_kpi, html_surveiller, CSS_BARRE, CSS_LEGER, CSS_SOUS_MENU, mode_leger, html_alerte_demo, html_audit, html_marque,  # noqa: E402
+from sndgir_menu import (html_signature, CSS_TABLEAU, html_bandeau, html_grille, html_kpi, html_surveiller, CSS_BARRE, CSS_LEGER, CSS_SOUS_MENU, mode_leger, html_alerte_demo, html_audit, html_marque,  # noqa: E402
                          html_profil, sous_menu)
 import sndgir_suivi  # noqa: E402  (suivi des expéditions, crédit documentaire, prix de revient)
 
@@ -3129,6 +3129,7 @@ section[data-testid="stSidebar"] hr{border-color:rgba(255,255,255,.07);}
 .st-key-tuiles [data-testid="stColumn"]:nth-child(5) button{--tc:#64D2FF}
 .st-key-tuiles [data-testid="stColumn"]:nth-child(6) button{--tc:#5E5CE6}
 .st-key-tuiles [data-testid="stColumn"]:nth-child(7) button{--tc:#FF453A}
+.st-key-tuiles [data-testid="stColumn"]:nth-child(8) button{--tc:#FF375F}
 @media (max-width:760px){.st-key-tuiles div[data-testid="stButton"] button{min-height:110px}.st-key-tuiles div[data-testid="stButton"] button p{font-size:.8rem!important}
   .st-key-tuiles div[data-testid="stButton"] button p::first-line{font-size:2.4rem!important}}
 #MainMenu,footer{visibility:hidden;}
@@ -3285,11 +3286,13 @@ def barre_laterale() -> str:
         st.markdown(html_audit(integre, nb_lignes), unsafe_allow_html=True)
         if not integre:
             st.caption(f"⚠️ {message}")
-        if st.session_state.get("user_role") == "Administrateur Système":
+        if st.session_state.get("user_role") == "Administrateur Système" and not sndgir_securite.mode_vitrine():
             if "comptes_demo" not in st.session_state:
                 st.session_state["comptes_demo"] = comptes_mot_de_passe_demo()
             if st.session_state["comptes_demo"]:
                 st.markdown(html_alerte_demo(st.session_state["comptes_demo"]), unsafe_allow_html=True)
+        if sndgir_securite.mode_vitrine():
+            st.markdown(html_signature(), unsafe_allow_html=True)
         with st.expander("💬 Mon avis"):
             sndgir_retours.render_formulaire(connexion, journaliser, tenant_courant(),
                                              st.session_state.get("username", "—"), st.session_state.get("user_role", ""))
@@ -4442,7 +4445,8 @@ def onglet_administration() -> None:
 # ══════════════════════════════════════════════════════════════════════════════
 def acces_direct_actif() -> bool:
     """Mode local : ouverture sans mot de passe, activé seulement par SNDGIR_ACCES_DIRECT=1."""
-    return os.getenv("SNDGIR_ACCES_DIRECT", "").lower() in ("1", "true", "oui")
+    return (os.getenv("SNDGIR_ACCES_DIRECT", "").lower() in ("1", "true", "oui")
+            or sndgir_securite.mode_vitrine())
 
 
 def ouvrir_session_directe() -> bool:
@@ -4457,6 +4461,17 @@ def ouvrir_session_directe() -> bool:
                              "username": str(ligne["username"]), "user_role": str(ligne["role"]),
                              "acces_direct": True})
     return True
+
+
+def onglet_vitrine() -> None:
+    """Page d'accueil en anglais pour le jury (module séparé ; l'ERP reste utilisable s'il manque)."""
+    try:
+        import sndgir_vitrine
+        import sndgir_logistique as _lg
+        sndgir_vitrine.render_showcase(_lg._modele_retard, _lg._modele_controle, lire_df, tenant_courant())
+    except Exception as exc:
+        st.error("Showcase page unavailable.")
+        st.code(str(exc))
 
 
 def onglet_finai_ia() -> None:
@@ -4485,8 +4500,12 @@ def main() -> None:
 
     role = barre_laterale()
     if st.session_state.get("acces_direct"):
-        st.sidebar.warning("Accès direct sans mot de passe : à utiliser seulement sur votre "
-                           "ordinateur, jamais sur internet.")
+        if sndgir_securite.mode_vitrine():
+            st.sidebar.info("🎓 Demo mode — open access, **fictitious data only**. "
+                            "Real deployments use passwords + 2FA.")
+        else:
+            st.sidebar.warning("Accès direct sans mot de passe : à utiliser seulement sur votre "
+                               "ordinateur, jamais sur internet.")
     st.title(f"🏦 {APP_NAME}")
     st.caption(f"Version {APP_VERSION} · rôle « {role} » · données isolées par entreprise")
 
@@ -4499,7 +4518,10 @@ def main() -> None:
         ("👤", "Portail\nclient", onglet_portail_client),
         ("🛡️", "Administration", onglet_administration),
     ]
+    if sndgir_securite.mode_vitrine():
+        pages.insert(0, ("🎓", "Project\nShowcase", onglet_vitrine))
     st.session_state.setdefault("page_active", 0)
+    st.session_state["page_active"] = min(st.session_state["page_active"], len(pages) - 1)
     try:
         conteneur = st.container(key="tuiles")
     except TypeError:  # anciennes versions de Streamlit : menu sans style carré
