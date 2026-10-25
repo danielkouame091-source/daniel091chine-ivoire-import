@@ -680,6 +680,7 @@ CREATE TABLE IF NOT EXISTS fne_factures (
 """
 
 
+from sndgir_export import bouton_export  # noqa: E402  (exports Excel / PDF)
 from sndgir_menu import (CSS_BARRE, CSS_SOUS_MENU, html_alerte_demo, html_audit, html_marque,  # noqa: E402
                          html_profil, sous_menu)
 import sndgir_suivi  # noqa: E402  (suivi des expéditions, crédit documentaire, prix de revient)
@@ -3202,6 +3203,7 @@ def barre_laterale() -> str:
     tenant = lister_tenants()
     nom_tenant = tenant.loc[tenant["id"] == tenant_courant(), "raison_sociale"]
     with st.sidebar:
+        st.session_state["entreprise_nom"] = str(nom_tenant.iloc[0]) if not nom_tenant.empty else ""
         st.markdown(html_marque(APP_NAME, APP_VERSION), unsafe_allow_html=True)
         st.markdown(html_profil(st.session_state.get("username", "—"), st.session_state.get("user_role", "—"),
                                 nom_tenant.iloc[0] if not nom_tenant.empty else "—"), unsafe_allow_html=True)
@@ -3281,11 +3283,10 @@ def onglet_tableau_de_bord() -> None:
             canaux = (dossiers.groupby("canal_risque", as_index=False).size()
                       .rename(columns={"canal_risque": "Canal", "size": "Dossiers"}))
             graphique_camembert(canaux, "Canal", "Dossiers", "Canaux de risque")
-    st.dataframe(
-        dossiers[["reference", "client", "regime", "valeur_caf_xof", "droits_douane",
-                  "total_facture", "statut", "canal_risque"]],
-        use_container_width=True,
-    )
+    tableau_dossiers = dossiers[["reference", "client", "regime", "valeur_caf_xof", "droits_douane",
+                                 "total_facture", "statut", "canal_risque"]]
+    st.dataframe(tableau_dossiers, use_container_width=True)
+    bouton_export(tableau_dossiers, "dossiers_tableau_de_bord", "Dossiers d'importation")
 
 
 def onglet_comptabilite() -> None:
@@ -3333,6 +3334,7 @@ def onglet_comptabilite() -> None:
             else:
                 st.error(f"⚠️ Balance déséquilibrée (écart {ecart:,.0f} FCFA).")
             st.dataframe(balance, use_container_width=True)
+            bouton_export(balance, "balance_generale", "Balance générale")
     if onglet_livre:
         plan = lire_df("SELECT compte, libelle FROM plan_comptable ORDER BY compte")
         if plan.empty:
@@ -3343,10 +3345,14 @@ def onglet_comptabilite() -> None:
             compte_filtre = st.selectbox("Compte", list(libelles_livre.keys()),
                                          format_func=lambda c: libelles_livre[c],
                                          key="livre_compte")
-            st.dataframe(grand_livre(compte_filtre), use_container_width=True)
+            livre = grand_livre(compte_filtre)
+            st.dataframe(livre, use_container_width=True)
+            bouton_export(livre, f"grand_livre_{compte_filtre}", f"Grand livre {compte_filtre}")
     if onglet_journaux:
         code = st.selectbox("Journal", ["ACQ", "VTE", "BAN", "OD"], key="choix_journal")
-        st.dataframe(journal_ecritures(code), use_container_width=True)
+        ecritures_journal = journal_ecritures(code)
+        st.dataframe(ecritures_journal, use_container_width=True)
+        bouton_export(ecritures_journal, f"journal_{code}", f"Journal {code}")
     if onglet_etats:
         if exiger("etats.view"):
             etats = etats_financiers()
@@ -3453,12 +3459,10 @@ def onglet_transit() -> None:
         if dossiers.empty:
             st.info("Aucun dossier enregistré.")
         else:
-            st.dataframe(
-                dossiers[["id", "reference", "client", "bl", "regime", "valeur_caf_xof",
-                          "droits_douane", "total_facture", "solde_du", "statut",
-                          "canal_risque"]],
-                use_container_width=True,
-            )
+            liste_dossiers = dossiers[["id", "reference", "client", "bl", "regime", "valeur_caf_xof",
+                                       "droits_douane", "total_facture", "solde_du", "statut", "canal_risque"]]
+            st.dataframe(liste_dossiers, use_container_width=True)
+            bouton_export(liste_dossiers, "dossiers", "Dossiers d'importation")
             if exiger("transit.valider"):
                 colonnes = st.columns(2)
                 with colonnes[0]:
@@ -3876,7 +3880,7 @@ def onglet_transit() -> None:
 
     if onglet_tour:
         sndgir_tour.render_tour(lire_df, connexion, journaliser, exiger, tenant_courant(),
-                                st.session_state.get("username", "système"), sndgir_suivi.etat_expedition)
+                                st.session_state.get("username", "système"), sndgir_suivi.etat_expedition, bouton_export)
 
     if onglet_ial:
         try:
@@ -4154,7 +4158,7 @@ def onglet_administration() -> None:
     onglet_tenants, onglet_utilisateurs, onglet_audit, onglet_taux, onglet_retours = sous_menu(
         "admin", ["🏢 Entreprises", "👥 Utilisateurs", "🔐 Piste d'audit", "💱 Taux de change", "💬 Retours d'essai"])
     if onglet_retours:
-        sndgir_retours.render_synthese(lire_df, tenant_courant())
+        sndgir_retours.render_synthese(lire_df, tenant_courant(), bouton_export)
     if onglet_tenants:
         with st.form("form_tenant"):
             colonnes = st.columns(3)
@@ -4236,10 +4240,11 @@ def onglet_administration() -> None:
             st.success(f"{message} ({nb_lignes} entrées)")
         else:
             st.error(message)
-        st.dataframe(lire_df(
+        journal_audit = lire_df(
             "SELECT ts, username, role, ip, action, entite, details FROM audit_logs"
-            " ORDER BY id DESC LIMIT 500"
-        ), use_container_width=True)
+            " ORDER BY id DESC LIMIT 500")
+        st.dataframe(journal_audit, use_container_width=True)
+        bouton_export(journal_audit, "piste_audit", "Piste d'audit")
     if onglet_taux:
         colonnes = st.columns(3)
         with colonnes[0]:

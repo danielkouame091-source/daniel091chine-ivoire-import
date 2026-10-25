@@ -139,7 +139,8 @@ def lien_whatsapp(telephone: str | None, texte: str) -> str:
 _ICONE = {"rouge": "🔴", "orange": "🟠", "vert": "🟢"}
 
 
-def render_tour(lire_df, connexion, journaliser, exiger, tenant_id: int, username: str, etat_expedition) -> None:
+def render_tour(lire_df, connexion, journaliser, exiger, tenant_id: int, username: str, etat_expedition,
+                bouton_export=None) -> None:
     st.caption("Toutes vos expéditions sur un seul écran. Les alertes viennent de règles de gestion simples, "
                "pas d'une IA. Les jalons sont saisis à la main (aucune connexion automatique au PCS/GUCE).")
     exps = lire_df("SELECT e.*, d.client, d.telephone, d.solde_du FROM expeditions e "
@@ -171,6 +172,8 @@ def render_tour(lire_df, connexion, journaliser, exiger, tenant_id: int, usernam
     k[2].metric("Surestaries estimées", f"{tab['Surestaries (FCFA)'].sum():,.0f}".replace(",", " "))
     k[3].metric("Crédits documentaires bloqués", f"{lcs[lcs['statut']=='Bloqué']['montant'].sum():,.0f}".replace(",", " "))
     st.dataframe(tab.drop(columns="_id"), hide_index=True, use_container_width=True)
+    if bouton_export:
+        bouton_export(tab.drop(columns=["_id", ""]), "tour_de_controle", "Tour de contrôle des expéditions")
 
     eid = st.selectbox("Voir le détail d'une expédition", tab["_id"].tolist(), key="tour_sel",
                        format_func=lambda i: f"{tab.loc[tab['_id']==i, 'Dossier'].iloc[0]} — {tab.loc[tab['_id']==i, 'Client'].iloc[0]}")
