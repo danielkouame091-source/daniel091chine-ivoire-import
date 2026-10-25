@@ -680,6 +680,11 @@ CREATE TABLE IF NOT EXISTS fne_factures (
 """
 
 
+import sndgir_suivi  # noqa: E402  (suivi des expéditions, crédit documentaire, prix de revient)
+
+_SCHEMA += sndgir_suivi.SCHEMA_SUIVI
+
+
 def init_db() -> None:
     """Crée le schéma et insère le jeu de données professionnel (idempotent)."""
     with connexion() as conn:
@@ -3365,9 +3370,10 @@ def onglet_transit() -> None:
         return
     st.subheader("🚢 Transit, Import-Export & Douanes")
     (onglet_dossiers, onglet_calcul, onglet_manifestes, onglet_surestaries, onglet_documents,
-     onglet_tarif, onglet_parcours) = st.tabs(
+     onglet_tarif, onglet_parcours, onglet_suivi, onglet_revient) = st.tabs(
         ["Dossiers", "Calculateur douanier", "Manifestes & B/L", "Surestaries", "Documents PDF",
-         "Tarif & taxes", "Parcours officiel & FNE"])
+         "Tarif & taxes", "Parcours officiel & FNE", "Suivi marchandise & crédit documentaire",
+         "Prix de revient"])
 
     with onglet_dossiers:
         if exiger("transit.creer"):
@@ -3853,6 +3859,13 @@ def onglet_transit() -> None:
                         st.error(str(exc))
                     else:
                         st.rerun()
+
+    with onglet_suivi:
+        sndgir_suivi.render_suivi(lire_df, connexion, journaliser, exiger, tenant_courant(),
+                                  st.session_state.get("username", "système"))
+
+    with onglet_revient:
+        sndgir_suivi.render_prix_revient(lire_df, tenant_courant())
 
     with onglet_parcours:
         dossiers_p = lister_dossiers()

@@ -219,3 +219,9 @@ Dossier `finai/` + fichier `sndgir_finai.py`. Depuis votre grand livre : SIG, ra
 scénarios « Et si ? », anomalies (Benford + Isolation Forest), prévision de trésorerie, textes (NLP), score de
 solvabilité. Le bilan est reconstitué par approximation et les modèles apprennent sur des données simulées :
 résultats indicatifs, à valider par l'expert-comptable. Paquets : voir `requirements.txt`.
+
+## Suivi de la marchandise jusqu'à Abidjan (Transit & Douanes)
+Deux nouveaux onglets : « Suivi marchandise & crédit documentaire » (expédition liée à un dossier, positions
+saisies, distance restante, progression, arrivée estimée, carte, déblocage du crédit documentaire seulement si
+l'arrivée est confirmée) et « Prix de revient » (CAF + droits + taxes + frais, par unité). Code : `sndgir_suivi.py`,
+test : `python3 valider_suivi.py`. Positions saisies à la main, distances à vol d'oiseau.
