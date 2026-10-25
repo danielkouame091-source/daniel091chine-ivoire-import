@@ -3103,16 +3103,17 @@ section[data-testid="stSidebar"] hr{border-color:rgba(255,255,255,.07);}
 .st-key-tuiles [data-testid="stHorizontalBlock"]{gap:18px;}
 .st-key-tuiles [data-testid="stColumn"]{min-width:0;}
 .st-key-tuiles div[data-testid="stButton"] button{
-  --tc:#0A84FF;aspect-ratio:1/1;width:100%;min-height:118px;border-radius:28px!important;
+  --tc:#0A84FF;aspect-ratio:1/1;width:100%;min-height:150px;border-radius:30px!important;
   display:flex;align-items:center;justify-content:center;text-align:center;padding:10px!important;
   background:var(--glass)!important;border:1px solid var(--edge)!important;
   box-shadow:0 1px 0 rgba(255,255,255,.16) inset,0 18px 34px -14px rgba(0,0,0,.8),
              0 10px 26px -16px var(--tc)!important;
   backdrop-filter:blur(18px);transition:transform .25s cubic-bezier(.2,.8,.2,1),box-shadow .25s ease!important;
 }
-.st-key-tuiles div[data-testid="stButton"] button p{white-space:pre-line;line-height:1.35;font-size:.82rem;font-weight:700;
-  color:#e8edf6;margin:0;}
-.st-key-tuiles div[data-testid="stButton"] button p::first-line{font-size:2.6rem;line-height:1.5;}
+.st-key-tuiles div[data-testid="stButton"] button p,.st-key-tuiles div[data-testid="stButton"] button div[data-testid="stMarkdownContainer"] p{
+  display:block!important;white-space:pre-line;line-height:1.35!important;font-size:1.15rem!important;font-weight:800!important;
+  color:#f5f7fa;margin:0;}
+.st-key-tuiles div[data-testid="stButton"] button p::first-line{font-size:3.6rem!important;line-height:1.5!important;}
 .st-key-tuiles div[data-testid="stButton"] button:hover{transform:translateY(-6px) scale(1.04);filter:none;
   box-shadow:0 1px 0 rgba(255,255,255,.22) inset,0 28px 46px -14px rgba(0,0,0,.85),0 0 34px -6px var(--tc)!important;}
 .st-key-tuiles div[data-testid="stButton"] button[kind="primary"],.st-key-tuiles div[data-testid="stButton"] button[data-testid="stBaseButton-primary"]{
@@ -3128,8 +3129,8 @@ section[data-testid="stSidebar"] hr{border-color:rgba(255,255,255,.07);}
 .st-key-tuiles [data-testid="stColumn"]:nth-child(5) button{--tc:#64D2FF}
 .st-key-tuiles [data-testid="stColumn"]:nth-child(6) button{--tc:#5E5CE6}
 .st-key-tuiles [data-testid="stColumn"]:nth-child(7) button{--tc:#FF453A}
-@media (max-width:760px){.st-key-tuiles div[data-testid="stButton"] button{min-height:92px}.st-key-tuiles div[data-testid="stButton"] button p{font-size:.68rem}
-  .st-key-tuiles div[data-testid="stButton"] button p::first-line{font-size:2rem}}
+@media (max-width:760px){.st-key-tuiles div[data-testid="stButton"] button{min-height:110px}.st-key-tuiles div[data-testid="stButton"] button p{font-size:.8rem!important}
+  .st-key-tuiles div[data-testid="stButton"] button p::first-line{font-size:2.4rem!important}}
 #MainMenu,footer{visibility:hidden;}
 ::-webkit-scrollbar{width:10px;height:10px}
 ::-webkit-scrollbar-thumb{background:rgba(255,255,255,.14);border-radius:10px}

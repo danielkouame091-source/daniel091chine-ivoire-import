@@ -14,14 +14,15 @@ CSS_SOUS_MENU = """
 [class*="st-key-sm_"] [data-testid="stHorizontalBlock"]{gap:14px;}
 [class*="st-key-sm_"] [data-testid="stColumn"]{min-width:0;}
 [class*="st-key-sm_"] div[data-testid="stButton"] button{
-  --tc:#0A84FF;aspect-ratio:1/1;width:100%;min-height:96px;border-radius:22px!important;
+  --tc:#0A84FF;aspect-ratio:1/1;width:100%;min-height:150px;border-radius:26px!important;
   display:flex;align-items:center;justify-content:center;text-align:center;padding:8px!important;
   background:var(--glass)!important;border:1px solid var(--edge)!important;
   box-shadow:0 1px 0 rgba(255,255,255,.16) inset,0 14px 26px -12px rgba(0,0,0,.8),0 8px 20px -14px var(--tc)!important;
   backdrop-filter:blur(16px);transition:transform .22s cubic-bezier(.2,.8,.2,1),box-shadow .22s ease!important;}
-[class*="st-key-sm_"] div[data-testid="stButton"] button p{white-space:pre-line;line-height:1.3;font-size:.74rem;
-  font-weight:700;color:#e8edf6;margin:0;}
-[class*="st-key-sm_"] div[data-testid="stButton"] button p::first-line{font-size:1.9rem;line-height:1.5;}
+[class*="st-key-sm_"] div[data-testid="stButton"] button p,[class*="st-key-sm_"] div[data-testid="stButton"] button div[data-testid="stMarkdownContainer"] p{
+  display:block!important;white-space:pre-line;line-height:1.35!important;font-size:1.12rem!important;
+  font-weight:800!important;color:#f5f7fa;margin:0;}
+[class*="st-key-sm_"] div[data-testid="stButton"] button p::first-line{font-size:3.2rem!important;line-height:1.5!important;}
 [class*="st-key-sm_"] div[data-testid="stButton"] button:hover{transform:translateY(-4px) scale(1.04);
   box-shadow:0 1px 0 rgba(255,255,255,.22) inset,0 20px 34px -12px rgba(0,0,0,.85),0 0 26px -6px var(--tc)!important;}
 [class*="st-key-sm_"] div[data-testid="stButton"] button[kind="primary"],
@@ -36,12 +37,12 @@ CSS_SOUS_MENU = """
 [class*="st-key-sm_"] [data-testid="stColumn"]:nth-child(6n+4) button{--tc:#BF5AF2}
 [class*="st-key-sm_"] [data-testid="stColumn"]:nth-child(6n+5) button{--tc:#64D2FF}
 [class*="st-key-sm_"] [data-testid="stColumn"]:nth-child(6n+6) button{--tc:#FF453A}
-@media (max-width:760px){[class*="st-key-sm_"] div[data-testid="stButton"] button{min-height:78px}
-  [class*="st-key-sm_"] div[data-testid="stButton"] button p{font-size:.62rem}
-  [class*="st-key-sm_"] div[data-testid="stButton"] button p::first-line{font-size:1.5rem}}
+@media (max-width:760px){[class*="st-key-sm_"] div[data-testid="stButton"] button{min-height:110px}
+  [class*="st-key-sm_"] div[data-testid="stButton"] button p{font-size:.85rem!important}
+  [class*="st-key-sm_"] div[data-testid="stButton"] button p::first-line{font-size:2.2rem!important}}
 """
 
-PAR_LIGNE = 6
+PAR_LIGNE = 4
 
 
 def _mise_en_forme(entree: str) -> str:
