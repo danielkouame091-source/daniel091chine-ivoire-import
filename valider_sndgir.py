@@ -13,6 +13,8 @@ Usage :  python3 valider_sndgir.py
 from __future__ import annotations
 
 import sys
+import tempfile
+from pathlib import Path
 
 import sndgir_erp as erp
 
@@ -26,6 +28,9 @@ def _verifier(condition: bool, libelle: str) -> None:
 
 def preparer_environnement() -> None:
     """Initialise la base et pose un tenant/utilisateur de test cohérent."""
+    # Base temporaire : la validation ne touche jamais à votre vraie base de données.
+    dossier_temp = Path(tempfile.mkdtemp(prefix="sndgir_valid_"))
+    erp.DB_PATH = dossier_temp / "validation.db"
     erp.st.session_state.clear()
     erp.init_db()
     locataires = erp.lister_tenants()
@@ -415,6 +420,76 @@ def tester_tarif_et_taxes() -> None:
               "Suppression des taxes de test")
 
 
+def tester_parcours_dus_fne() -> None:
+    print("\n— Parcours officiel, droit de sortie, FNE —")
+    erp.ajouter_droit_sortie("1801", "TEST DUS cacao", "POURCENT_PRIX_REF", 10.0, "kg", 1500.0, "TEST")
+    erp.ajouter_droit_sortie("0801", "TEST DUS noix", "MONTANT_PAR_UNITE", 10.0, "kg")
+    dus = erp.calculer_dus("1801.00.00.00", 1000)
+    _verifier(dus["total"] == 150_000, f"DUS : 1000 kg × 1500 × 10 % = {dus['total']:,.0f}")
+    _verifier(erp.calculer_dus("0801.31.00.00", 200)["total"] == 2_000, "DUS par unité : 200 kg × 10")
+    _verifier(erp.calculer_dus("8471.30.00.00", 5)["total"] == 0, "Aucun DUS hors préfixe")
+    try:
+        erp.calculer_dus("1801.00.00.00", 0)
+        _verifier(False, "DUS sans quantité refusé")
+    except ValueError:
+        _verifier(True, "DUS sans quantité refusé")
+    try:
+        erp.ajouter_droit_sortie("1801", "x", "POURCENT_PRIX_REF", 10.0, "kg", 0.0)
+        _verifier(False, "Prix de référence obligatoire refusé")
+    except ValueError:
+        _verifier(True, "Prix de référence obligatoire refusé")
+
+    export = erp.creer_dossier("TEST-EXP-001", "Client Export", "", "Cacao", "E100",
+                               1_500_000, 0, 0, 0.0, code_sh="1801.00.00.00", quantite=1000)
+    _verifier(export["droits"]["total_droits_taxes"] == 150_000 and export["total_facture"] ==
+              1_500_000 + 150_000, "Dossier export : DUS ajouté au total, aucun DD ni TVA")
+
+    imp = erp.creer_dossier("TEST-PAR-001", "Client Import", "BL1", "Pièces", "C100",
+                            2_000_000, 100_000, 20_000, 10.0)
+    did = imp["dossier_id"]
+    etapes = erp.etapes_parcours(did)
+    _verifier(not any(e["fait"] for e in etapes), "Parcours : aucune étape faite au départ")
+    erp.enregistrer_parcours(did, "CC123", "CI456", True, "DEC789", "LIQ1", "QUIT1", "COMPTANT")
+    fait = {e["code"]: e["fait"] for e in erp.etapes_parcours(did)}
+    _verifier(fait["STATUT"] and fait["DECLARATION"] and fait["PAIEMENT"] and not fait["BAE"],
+              "Parcours : statut, déclaration et paiement validés, BAE pas encore")
+    erp.enregistrer_document_dossier(did, "RFCV", "RFCV-001")
+    _verifier({e["code"]: e["fait"] for e in erp.etapes_parcours(did)}["RFCV"], "Parcours : RFCV pris en compte")
+    try:
+        erp.enregistrer_parcours(did, "CC123", numero_quittance="Q2")
+        _verifier(False, "Quittance sans avis de liquidation refusée")
+    except ValueError:
+        _verifier(True, "Quittance sans avis de liquidation refusée")
+    _verifier("RFCV" in erp.documents_requis("C100", 2_000_000), "Le RFCV fait partie des pièces d'un import")
+
+    try:
+        erp.enregistrer_fne(did, "", "A_CERTIFIER")
+        _verifier(False, "FNE sans NCC client refusée")
+    except ValueError:
+        _verifier(True, "FNE sans NCC client refusée")
+    try:
+        erp.enregistrer_fne(did, "NCC1", "CERTIFIEE")
+        _verifier(False, "FNE certifiée sans numéro refusée")
+    except ValueError:
+        _verifier(True, "FNE certifiée sans numéro refusée")
+    erp.enregistrer_fne(did, "NCC1", "CERTIFIEE", "FNE-0001", "VERIF")
+    _verifier(erp.lire_fne(did)["numero_fne"] == "FNE-0001", "Suivi FNE enregistré")
+
+    ancien = erp.st.session_state["tenant_id"]
+    autre = [int(t) for t in erp.lister_tenants()["id"] if int(t) != ancien]
+    if autre:
+        erp.st.session_state["tenant_id"] = autre[0]
+        try:
+            erp.etapes_parcours(did)
+            _verifier(False, "Isolation : parcours d'un autre tenant refusé")
+        except ValueError:
+            _verifier(True, "Isolation : parcours d'un autre tenant refusé")
+        erp.st.session_state["tenant_id"] = ancien
+    for _, ligne in erp.lister_droits_sortie().iterrows():
+        if str(ligne["libelle"]).startswith("TEST"):
+            erp.supprimer_droit_sortie(int(ligne["id"]))
+
+
 def main() -> int:
     print("═" * 62)
     print(f" VALIDATION FONCTIONNELLE — {erp.APP_NAME} v{erp.APP_VERSION}")
@@ -429,6 +504,7 @@ def main() -> int:
     tester_transit()
     tester_conformite_dossier()
     tester_tarif_et_taxes()
+    tester_parcours_dus_fne()
     tester_tenant()
     tester_comptes()
     tester_rbac_isolation()

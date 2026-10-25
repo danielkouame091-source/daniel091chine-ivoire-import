@@ -147,8 +147,9 @@ DOCUMENTS_DOSSIER = {
     "FACTURE":     "Facture commerciale",
     "BL":          "Connaissement (B/L) ou LTA",
     "COLISAGE":    "Liste de colisage",
-    "FDI":         "FDI (Fiche de Déclaration d'Importation)",
+    "FDI":         "FDI (Fiche de Déclaration à l'Importation)",
     "BSC":         "BSC (Bordereau de Suivi des Cargaisons, OIC)",
+    "RFCV":        "RFCV (Résultat Final de Classification de Valeur)",
     "CDC":         "Certificat de Conformité (CdC)",
     "DECLARATION": "Déclaration en douane enregistrée",
     "TRANSIT":     "Déclaration de transit (TI / TRIE)",
@@ -161,6 +162,18 @@ TRANCHES_DD = (0.0, 5.0, 10.0, 20.0, 35.0)
 MODES_TAXE_SPECIFIQUE = {
     "POURCENT_CAF":      "Pourcentage de la valeur CAF",
     "MONTANT_PAR_UNITE": "Montant fixe par unité (kg, litre…)",
+}
+
+MODES_DROIT_SORTIE = {
+    "POURCENT_PRIX_REF": "% du prix de référence CIF × quantité",
+    "MONTANT_PAR_UNITE": "Montant fixe par unité (kg, m³…)",
+}
+MODES_PAIEMENT = {"COMPTANT": "Comptant (art. 94 du Code des douanes)", "CREDIT": "À crédit"}
+STATUTS_FNE = {
+    "A_CERTIFIER": "À certifier",
+    "TRANSMISE":   "Transmise à la plateforme FNE",
+    "CERTIFIEE":   "Certifiée (numéro FNE reçu)",
+    "REJETEE":     "Rejetée par la plateforme",
 }
 
 # Modèle de fichier pour l'import du tarif (les lignes « EXEMPLE » sont à remplacer).
@@ -622,6 +635,33 @@ CREATE TABLE IF NOT EXISTS taxes_specifiques (
     valeur REAL NOT NULL,
     unite TEXT,
     UNIQUE(tenant_id, prefixe_sh, libelle)
+);
+CREATE TABLE IF NOT EXISTS droits_sortie (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tenant_id INTEGER NOT NULL,
+    prefixe_sh TEXT NOT NULL,
+    libelle TEXT NOT NULL,
+    mode TEXT NOT NULL,
+    valeur REAL NOT NULL,
+    unite TEXT,
+    prix_ref REAL DEFAULT 0,
+    campagne TEXT,
+    UNIQUE(tenant_id, prefixe_sh, libelle)
+);
+CREATE TABLE IF NOT EXISTS parcours_dossier (
+    tenant_id INTEGER NOT NULL,
+    dossier_id INTEGER NOT NULL,
+    numero_cc TEXT, code_importateur TEXT, compte_guce INTEGER DEFAULT 0,
+    numero_declaration TEXT, numero_liquidation TEXT, numero_quittance TEXT,
+    mode_paiement TEXT, updated_by TEXT, updated_at TEXT,
+    PRIMARY KEY (tenant_id, dossier_id)
+);
+CREATE TABLE IF NOT EXISTS fne_factures (
+    tenant_id INTEGER NOT NULL,
+    dossier_id INTEGER NOT NULL,
+    ncc_client TEXT, statut TEXT DEFAULT 'A_CERTIFIER',
+    numero_fne TEXT, code_verification TEXT, updated_by TEXT, updated_at TEXT,
+    PRIMARY KEY (tenant_id, dossier_id)
 );
 """
 
@@ -1713,9 +1753,15 @@ def creer_dossier(reference: str, client: str, bl: str, article: str, regime: st
     code_effectif = normaliser_sh(code_sh) if str(code_sh or "").strip() else _code_sh_article(article)
     tarif = chercher_tarif(code_effectif) if code_effectif else None
     # Export, admission temporaire et transit : aucune taxe à l'entrée, donc pas de quantité exigée.
-    taxes = ({"lignes": [], "total": 0.0} if regime in REGIMES_SUSPENDUS
-             else calculer_taxes_specifiques(code_effectif, valeur_caf, quantite))
-    droits = calculer_droits(valeur_caf, dd_pct, regime, autres_taxes=taxes["total"])
+    if regime == "E100":   # export : Droit Unique de Sortie (règles saisies par le tenant)
+        taxes = calculer_dus(code_effectif, quantite)
+        droits = calculer_droits(valeur_caf, dd_pct, regime)
+        droits["autres_taxes"] = taxes["total"]
+        droits["total_droits_taxes"] = round(droits["total_droits_taxes"] + taxes["total"], 2)
+    else:
+        taxes = ({"lignes": [], "total": 0.0} if regime in REGIMES_SUSPENDUS
+                 else calculer_taxes_specifiques(code_effectif, valeur_caf, quantite))
+        droits = calculer_droits(valeur_caf, dd_pct, regime, autres_taxes=taxes["total"])
     dd_reference = float(tarif["dd"]) if tarif else taux_dd_reference(article)
     risque = scorer_risque(valeur_caf, dd_pct, dd_pct if dd_reference is None else dd_reference,
                            fournisseur_nouveau=fournisseur_nouveau,
@@ -1760,7 +1806,7 @@ def documents_requis(regime: str, fob_xof: float = 0.0) -> list[str]:
     peut être déclaré « Exempté » avec motif). Liste de référence à adapter.
     """
     if regime == "C100":
-        requis = ["FACTURE", "BL", "COLISAGE", "FDI", "BSC"]
+        requis = ["FACTURE", "BL", "COLISAGE", "FDI", "BSC", "RFCV"]
         if float(fob_xof or 0) >= SEUIL_CDC_FOB_XOF:
             requis.append("CDC")
         return requis + ["DECLARATION"]
@@ -1836,6 +1882,194 @@ def controle_conformite(dossier_id: int) -> dict:
         "libelles_manquants": [DOCUMENTS_DOSSIER[code] for code in manquants],
         "complet": not manquants,
     }
+
+
+def ajouter_droit_sortie(prefixe_sh: str, libelle: str, mode: str, valeur: float,
+                         unite: str = "", prix_ref: float = 0.0, campagne: str = "") -> None:
+    """Règle de Droit Unique de Sortie (DUS) à l'exportation, par préfixe de code SH.
+
+    Les taux et prix de référence CIF sont fixés avant chaque campagne par le Conseil des
+    ministres : ils ne sont jamais préchargés, vous les saisissez (et les mettez à jour).
+    """
+    prefixe = re.sub(r"\D", "", str(prefixe_sh or ""))
+    if not 2 <= len(prefixe) <= 10:
+        raise ValueError("Préfixe SH invalide : 2 à 10 chiffres (ex. 1801 pour le cacao).")
+    if not str(libelle or "").strip():
+        raise ValueError("Le libellé est obligatoire.")
+    if mode not in MODES_DROIT_SORTIE:
+        raise ValueError("Mode de calcul inconnu.")
+    if valeur < 0 or (mode == "POURCENT_PRIX_REF" and valeur > 100):
+        raise ValueError("Valeur du droit invalide.")
+    if not str(unite or "").strip():
+        raise ValueError("Précisez l'unité (kg, tonne, m³…).")
+    if mode == "POURCENT_PRIX_REF" and float(prix_ref) <= 0:
+        raise ValueError("Indiquez le prix de référence CIF par unité de la campagne.")
+    with connexion() as conn:
+        conn.execute(
+            "INSERT INTO droits_sortie (tenant_id, prefixe_sh, libelle, mode, valeur, unite,"
+            " prix_ref, campagne) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(tenant_id, prefixe_sh,"
+            " libelle) DO UPDATE SET mode=excluded.mode, valeur=excluded.valeur,"
+            " unite=excluded.unite, prix_ref=excluded.prix_ref, campagne=excluded.campagne",
+            (tenant_courant(), prefixe, libelle.strip(), mode, float(valeur), unite.strip(),
+             float(prix_ref or 0), str(campagne or "").strip()))
+    journaliser("droit_sortie_maj", "droits_sortie", prefixe, f"{libelle.strip()}; {mode}; {valeur}")
+
+
+def supprimer_droit_sortie(droit_id: int) -> None:
+    with connexion() as conn:
+        cur = conn.execute("DELETE FROM droits_sortie WHERE id=? AND tenant_id=?",
+                           (droit_id, tenant_courant()))
+        if cur.rowcount == 0:
+            raise ValueError("Droit de sortie introuvable.")
+    journaliser("droit_sortie_suppression", "droits_sortie", str(droit_id), "")
+
+
+def lister_droits_sortie() -> pd.DataFrame:
+    return lire_df(
+        "SELECT id, prefixe_sh, libelle, mode, valeur, unite, prix_ref, campagne FROM droits_sortie"
+        " WHERE tenant_id=? ORDER BY prefixe_sh, libelle", (tenant_courant(),))
+
+
+def calculer_dus(code_sh: str, quantite: float = 0.0) -> dict:
+    """Droit Unique de Sortie applicable à un code SH exporté (règles du tenant).
+
+    Une règle s'applique si le code SH commence par son préfixe ; la quantité est alors
+    obligatoire (sinon ValueError). Retourne {"lignes": [{libelle, montant, detail}], "total"}.
+    """
+    chiffres = re.sub(r"\D", "", str(code_sh or ""))
+    lignes: list[dict] = []
+    if chiffres:
+        for _, regle in lister_droits_sortie().iterrows():
+            if not chiffres.startswith(str(regle["prefixe_sh"])):
+                continue
+            if float(quantite or 0) <= 0:
+                raise ValueError(f"Quantité obligatoire ({regle['unite']}) : le droit de sortie "
+                                 f"« {regle['libelle']} » s'applique à ce code SH.")
+            q, valeur = float(quantite), float(regle["valeur"])
+            if regle["mode"] == "POURCENT_PRIX_REF":
+                montant = round(q * float(regle["prix_ref"]) * valeur / 100.0, 2)
+                detail = f"{valeur:g} % × {float(regle['prix_ref']):,.0f} FCFA/{regle['unite']} × {q:g}"
+            else:
+                montant = round(q * valeur, 2)
+                detail = f"{q:g} × {valeur:g} FCFA / {regle['unite']}"
+            lignes.append({"libelle": regle["libelle"], "montant": montant, "detail": detail})
+    return {"lignes": lignes, "total": round(sum(ligne["montant"] for ligne in lignes), 2)}
+
+
+# ── Parcours officiel de dédouanement (GUCE → SYDAM World → paiement → BAE) ──────────
+def _dossier_du_tenant(conn, dossier_id: int):
+    ligne = conn.execute("SELECT * FROM dossiers WHERE id=? AND tenant_id=?",
+                         (dossier_id, tenant_courant())).fetchone()
+    if not ligne:
+        raise ValueError("Dossier introuvable.")
+    return ligne
+
+
+def lire_parcours(dossier_id: int) -> dict:
+    with connexion() as conn:
+        _dossier_du_tenant(conn, dossier_id)
+        ligne = conn.execute("SELECT * FROM parcours_dossier WHERE tenant_id=? AND dossier_id=?",
+                             (tenant_courant(), dossier_id)).fetchone()
+    return dict(ligne) if ligne else {}
+
+
+def enregistrer_parcours(dossier_id: int, numero_cc: str = "", code_importateur: str = "",
+                         compte_guce: bool = False, numero_declaration: str = "",
+                         numero_liquidation: str = "", numero_quittance: str = "",
+                         mode_paiement: str = "") -> None:
+    """Enregistre les références du parcours officiel (saisies à partir des systèmes officiels)."""
+    if mode_paiement and mode_paiement not in MODES_PAIEMENT:
+        raise ValueError("Mode de paiement inconnu.")
+    if numero_quittance.strip() and not numero_liquidation.strip():
+        raise ValueError("Une quittance suppose un avis de liquidation : renseignez-le d'abord.")
+    valeurs = [str(v or "").strip() for v in (numero_cc, code_importateur, numero_declaration,
+                                              numero_liquidation, numero_quittance)]
+    with connexion() as conn:
+        _dossier_du_tenant(conn, dossier_id)
+        conn.execute(
+            "INSERT INTO parcours_dossier (tenant_id, dossier_id, numero_cc, code_importateur,"
+            " compte_guce, numero_declaration, numero_liquidation, numero_quittance,"
+            " mode_paiement, updated_by, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)"
+            " ON CONFLICT(tenant_id, dossier_id) DO UPDATE SET numero_cc=excluded.numero_cc,"
+            " code_importateur=excluded.code_importateur, compte_guce=excluded.compte_guce,"
+            " numero_declaration=excluded.numero_declaration,"
+            " numero_liquidation=excluded.numero_liquidation,"
+            " numero_quittance=excluded.numero_quittance, mode_paiement=excluded.mode_paiement,"
+            " updated_by=excluded.updated_by, updated_at=excluded.updated_at",
+            (tenant_courant(), dossier_id, *valeurs[:2], 1 if compte_guce else 0, *valeurs[2:],
+             mode_paiement or None, st.session_state.get("username", "système"), maintenant()))
+    journaliser("parcours_maj", "parcours_dossier", str(dossier_id), "références du parcours")
+
+
+def etapes_parcours(dossier_id: int) -> list[dict]:
+    """Étapes du dédouanement ivoirien et leur avancement pour ce dossier.
+
+    Trame issue de la procédure publiée par la Douane : statut importateur (compte
+    contribuable, code importateur, compte GUCE) → FDI → BSC → RFCV → déclaration en détail
+    par un commissionnaire agréé → contrôle SYDAM World (canal) → liquidation et paiement →
+    BAE. Chaque numéro est saisi par l'utilisateur depuis les systèmes officiels : l'application
+    ne se connecte pas à ces systèmes.
+    """
+    with connexion() as conn:
+        dossier = dict(_dossier_du_tenant(conn, dossier_id))
+    parcours = lire_parcours(dossier_id)
+    pieces = _references_documents(dossier_id)
+    export = dossier["regime"] == "E100"
+    etapes = [{"code": "STATUT", "libelle": "Statut importateur : compte contribuable, code "
+               "importateur, compte GUCE" if not export else "Statut exportateur : compte "
+               "contribuable, compte GUCE",
+               "fait": bool(parcours.get("numero_cc") and parcours.get("compte_guce")
+                            and (export or parcours.get("code_importateur")))}]
+    if dossier["regime"] == "C100":
+        for code, libelle in (("FDI", "FDI levée (après domiciliation de la facture pro forma)"),
+                              ("BSC", "BSC (OIC) établi et validé"),
+                              ("RFCV", "RFCV obtenu (valeur en douane)")):
+            etapes.append({"code": code, "libelle": libelle, "fait": code in pieces})
+    etapes.append({"code": "DECLARATION", "libelle": "Déclaration en détail par un commissionnaire "
+                   "agréé en douane (SYDAM World)",
+                   "fait": bool(parcours.get("numero_declaration")) or "DECLARATION" in pieces})
+    etapes.append({"code": "CANAL", "libelle": f"Contrôle SYDAM World : canal attribué "
+                   f"(estimation de l'application : {dossier.get('canal_risque') or '—'})",
+                   "fait": bool(parcours.get("numero_declaration"))})
+    etapes.append({"code": "PAIEMENT", "libelle": "Avis de liquidation et paiement (quittance)",
+                   "fait": bool(parcours.get("numero_liquidation") and parcours.get("numero_quittance"))})
+    etapes.append({"code": "BAE", "libelle": "Bon à Enlever émis",
+                   "fait": dossier["statut"] in (STATUT_BAE, "Livré au Client")})
+    return etapes
+
+
+# ── Facture Normalisée Électronique (FNE) ─────────────────────────────────────────────
+def lire_fne(dossier_id: int) -> dict:
+    with connexion() as conn:
+        _dossier_du_tenant(conn, dossier_id)
+        ligne = conn.execute("SELECT * FROM fne_factures WHERE tenant_id=? AND dossier_id=?",
+                             (tenant_courant(), dossier_id)).fetchone()
+    return dict(ligne) if ligne else {"statut": "A_CERTIFIER"}
+
+
+def enregistrer_fne(dossier_id: int, ncc_client: str, statut: str, numero_fne: str = "",
+                    code_verification: str = "") -> None:
+    """Suit la certification FNE d'une facture. L'application ne se connecte pas à la
+    plateforme : le numéro FNE reçu de la plateforme est saisi ici pour le suivi."""
+    if statut not in STATUTS_FNE:
+        raise ValueError("Statut FNE inconnu.")
+    if not str(ncc_client or "").strip():
+        raise ValueError("Le numéro de compte contribuable (NCC) du client est obligatoire.")
+    if statut == "CERTIFIEE" and not str(numero_fne or "").strip():
+        raise ValueError("Une facture certifiée doit avoir son numéro FNE.")
+    with connexion() as conn:
+        _dossier_du_tenant(conn, dossier_id)
+        conn.execute(
+            "INSERT INTO fne_factures (tenant_id, dossier_id, ncc_client, statut, numero_fne,"
+            " code_verification, updated_by, updated_at) VALUES (?,?,?,?,?,?,?,?)"
+            " ON CONFLICT(tenant_id, dossier_id) DO UPDATE SET ncc_client=excluded.ncc_client,"
+            " statut=excluded.statut, numero_fne=excluded.numero_fne,"
+            " code_verification=excluded.code_verification, updated_by=excluded.updated_by,"
+            " updated_at=excluded.updated_at",
+            (tenant_courant(), dossier_id, ncc_client.strip(), statut, str(numero_fne or "").strip(),
+             str(code_verification or "").strip(), st.session_state.get("username", "système"),
+             maintenant()))
+    journaliser("fne_maj", "fne_factures", str(dossier_id), f"statut={statut}")
 
 
 def maj_statut_dossier(dossier_id: int, statut: str) -> None:
@@ -2798,8 +3032,9 @@ def onglet_transit() -> None:
         return
     st.subheader("🚢 Transit, Import-Export & Douanes")
     (onglet_dossiers, onglet_calcul, onglet_manifestes, onglet_surestaries, onglet_documents,
-     onglet_tarif) = st.tabs(["Dossiers", "Calculateur douanier", "Manifestes & B/L",
-                              "Surestaries", "Documents PDF", "Tarif & taxes"])
+     onglet_tarif, onglet_parcours) = st.tabs(
+        ["Dossiers", "Calculateur douanier", "Manifestes & B/L", "Surestaries", "Documents PDF",
+         "Tarif & taxes", "Parcours officiel & FNE"])
 
     with onglet_dossiers:
         if exiger("transit.creer"):
@@ -3238,6 +3473,131 @@ def onglet_transit() -> None:
                             st.error(str(exc))
                         else:
                             st.rerun()
+
+
+
+        st.markdown("##### Droit Unique de Sortie (exportations)")
+        st.caption("Le Conseil des ministres fixe les taux et les prix de référence CIF avant chaque "
+                   "campagne (cacao, café, anacarde, bois…). Saisissez-les ici : rien n'est préchargé.")
+        droits_liste = lister_droits_sortie()
+        if droits_liste.empty:
+            st.caption("Aucun droit de sortie défini.")
+        else:
+            st.dataframe(droits_liste.assign(mode=droits_liste["mode"].map(MODES_DROIT_SORTIE))
+                         [["prefixe_sh", "libelle", "mode", "valeur", "unite", "prix_ref", "campagne"]],
+                         use_container_width=True, hide_index=True)
+        if peut_gerer:
+            with st.form("form_droit_sortie", clear_on_submit=True):
+                cols_d = st.columns(4)
+                pref_d = cols_d[0].text_input("Préfixe SH", placeholder="ex. 1801")
+                lib_d = cols_d[1].text_input("Libellé", key="lib_dus")
+                mode_d = cols_d[2].selectbox("Calcul", list(MODES_DROIT_SORTIE.keys()),
+                                             format_func=lambda cle: MODES_DROIT_SORTIE[cle])
+                val_d = cols_d[3].number_input("Valeur (% ou FCFA / unité)", min_value=0.0, key="val_dus")
+                cols_e = st.columns(3)
+                unite_d = cols_e[0].text_input("Unité", placeholder="kg", key="unite_dus")
+                prix_d = cols_e[1].number_input("Prix de référence CIF par unité (FCFA)", min_value=0.0)
+                camp_d = cols_e[2].text_input("Campagne", placeholder="ex. 2026/2027")
+                ajout_d = st.form_submit_button("Enregistrer le droit de sortie", use_container_width=True)
+            if ajout_d:
+                try:
+                    ajouter_droit_sortie(pref_d, lib_d, mode_d, val_d, unite_d, prix_d, camp_d)
+                except ValueError as exc:
+                    st.error(str(exc))
+                else:
+                    st.success("Droit de sortie enregistré.")
+                    st.rerun()
+            if not droits_liste.empty:
+                cs = st.columns([3, 1])
+                a_sup = cs[0].selectbox("Supprimer un droit de sortie", droits_liste["id"].tolist(),
+                                        format_func=lambda cle: str(droits_liste.loc[
+                                            droits_liste["id"] == cle, "libelle"].iloc[0]))
+                cs[1].write("")
+                if cs[1].button("Supprimer", key="dus_supprimer"):
+                    try:
+                        supprimer_droit_sortie(int(a_sup))
+                    except ValueError as exc:
+                        st.error(str(exc))
+                    else:
+                        st.rerun()
+
+    with onglet_parcours:
+        dossiers_p = lister_dossiers()
+        if dossiers_p.empty:
+            st.info("Aucun dossier : créez-en un pour suivre son parcours officiel.")
+        else:
+            options_p = {int(ligne["id"]): f"{ligne['reference']} — {ligne['client']}"
+                         for _, ligne in dossiers_p.iterrows()}
+            id_p = st.selectbox("Dossier", list(options_p.keys()),
+                                format_func=lambda cle: options_p[cle], key="parcours_dossier")
+            peut_editer = (a_permission(st.session_state.get("user_role", ""), "transit.creer")
+                           or a_permission(st.session_state.get("user_role", ""), "transit.valider"))
+            etapes = etapes_parcours(int(id_p))
+            faites = sum(1 for etape in etapes if etape["fait"])
+            st.progress(faites / len(etapes), text=f"{faites} étape(s) sur {len(etapes)}")
+            for numero, etape in enumerate(etapes, start=1):
+                st.markdown(f"{'✅' if etape['fait'] else '⬜'} **{numero}.** {etape['libelle']}")
+            st.caption("Les numéros se saisissent depuis les systèmes officiels (GUCE, SYDAM World, "
+                       "plateforme FNE). Cette application ne s'y connecte pas.")
+
+            courant = lire_parcours(int(id_p))
+            st.markdown("##### Références du dossier")
+            with st.form(f"form_parcours_{id_p}"):
+                colonnes_1 = st.columns(3)
+                numero_cc = colonnes_1[0].text_input("N° compte contribuable (CC)",
+                                                     value=courant.get("numero_cc") or "")
+                code_imp = colonnes_1[1].text_input("Code importateur",
+                                                    value=courant.get("code_importateur") or "")
+                guce = colonnes_1[2].checkbox("Compte GUCE actif",
+                                              value=bool(courant.get("compte_guce")))
+                colonnes_2 = st.columns(4)
+                declaration = colonnes_2[0].text_input("N° déclaration en détail",
+                                                       value=courant.get("numero_declaration") or "")
+                liquidation = colonnes_2[1].text_input("N° avis de liquidation",
+                                                       value=courant.get("numero_liquidation") or "")
+                quittance = colonnes_2[2].text_input("N° quittance",
+                                                     value=courant.get("numero_quittance") or "")
+                cles_paiement = [""] + list(MODES_PAIEMENT.keys())
+                paiement = colonnes_2[3].selectbox(
+                    "Mode de paiement", cles_paiement,
+                    index=cles_paiement.index(courant.get("mode_paiement") or ""),
+                    format_func=lambda cle: MODES_PAIEMENT.get(cle, "—"))
+                envoi = st.form_submit_button("Enregistrer les références", use_container_width=True,
+                                              disabled=not peut_editer)
+            if envoi:
+                try:
+                    enregistrer_parcours(int(id_p), numero_cc, code_imp, guce, declaration,
+                                         liquidation, quittance, paiement)
+                except ValueError as exc:
+                    st.error(str(exc))
+                else:
+                    st.success("Références enregistrées.")
+                    st.rerun()
+
+            st.markdown("##### Facture Normalisée Électronique (FNE)")
+            fne = lire_fne(int(id_p))
+            st.caption("Suivi de la certification de la facture auprès de la plateforme FNE de la "
+                       "DGI : saisissez ici le numéro reçu. Aucune transmission automatique.")
+            with st.form(f"form_fne_{id_p}"):
+                colonnes_3 = st.columns(4)
+                ncc_client = colonnes_3[0].text_input("NCC du client", value=fne.get("ncc_client") or "")
+                cles_fne = list(STATUTS_FNE.keys())
+                statut_fne = colonnes_3[1].selectbox(
+                    "Statut", cles_fne, index=cles_fne.index(fne.get("statut") or "A_CERTIFIER"),
+                    format_func=lambda cle: STATUTS_FNE[cle])
+                numero_fne = colonnes_3[2].text_input("N° FNE", value=fne.get("numero_fne") or "")
+                code_verif = colonnes_3[3].text_input("Code de vérification",
+                                                      value=fne.get("code_verification") or "")
+                envoi_fne = st.form_submit_button("Enregistrer le suivi FNE",
+                                                  use_container_width=True, disabled=not peut_editer)
+            if envoi_fne:
+                try:
+                    enregistrer_fne(int(id_p), ncc_client, statut_fne, numero_fne, code_verif)
+                except ValueError as exc:
+                    st.error(str(exc))
+                else:
+                    st.success("Suivi FNE enregistré.")
+                    st.rerun()
 
 
 def onglet_ia() -> None:

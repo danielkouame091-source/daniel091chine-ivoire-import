@@ -104,6 +104,17 @@ Le cœur applicatif tient dans un **bloc Python unique et exécutable** :
 - **Taxes spécifiques / accises** par produit : règles configurables par préfixe SH, soit en
   % de la CAF, soit en montant par unité (kg, litre…). Elles s'ajoutent aux droits et entrent
   dans la base de la TVA (selon les sources secondaires consultées ; à confirmer).
+- **Parcours officiel de dédouanement** (onglet *Parcours officiel & FNE*) : suivi pas à pas selon la
+  procédure publiée par la Douane ivoirienne — compte contribuable, code importateur, compte GUCE,
+  FDI, BSC, RFCV, déclaration en détail par commissionnaire agréé, canal SYDAM World, avis de
+  liquidation et quittance (comptant art. 94 ou crédit), BAE. Vous saisissez les numéros issus des
+  systèmes officiels ; l'application **ne s'y connecte pas**.
+- **Droit Unique de Sortie (export)** : règles par code SH (% du prix de référence CIF × quantité, ou
+  montant par unité). Le Conseil des ministres fixe taux et prix avant chaque campagne : rien n'est
+  préchargé, vous les saisissez.
+- **Facture Normalisée Électronique (FNE)** : suivi du statut de certification et du numéro FNE
+  reçu de la plateforme de la DGI (obligatoire par phases depuis juin 2025). Pas de transmission
+  automatique : une connexion API exige les accès et la documentation officiels de la DGI.
 - **Conformité documentaire du dossier** : pièces obligatoires selon le régime
   (facture, B/L, colisage, **FDI**, **BSC**, **Certificat de Conformité** dès 1 000 000 FCFA
   de FOB, déclaration en douane…). Le CdC peut être déclaré « Exempté » avec motif.
@@ -187,7 +198,7 @@ PostgreSQL ; le moteur métier de `sndgir_erp.py` est transposable via SQLAlchem
 ## ✅ État de validation
 
 ```
-101 validations · 0 échec   (python3 valider_sndgir.py)
+115 validations · 0 échec   (python3 valider_sndgir.py)
 Sécurité ✓  Audit immuable ✓  Partie double ✓  Douanes ✓  Surestaries ✓
 OCR/IDP ✓  Transit & B/L ✓  Multi-tenant & RBAC ✓  PDF scellés ✓
 Conformité documentaire ✓  Cycle de vie du dossier ✓  Comptes & blocage ✓
