@@ -12,3 +12,7 @@ uploads_sndgir/
 *.pdf
 .DS_Store
 sauvegardes/
+
+# données réelles des clients : ne jamais publier
+donnees_reelles/*.csv
+!donnees_reelles/modele_*.csv

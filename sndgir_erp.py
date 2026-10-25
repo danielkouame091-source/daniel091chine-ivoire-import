@@ -4056,8 +4056,17 @@ def onglet_transit() -> None:
 
 def onglet_ia() -> None:
     st.subheader("🤖 Assistant IA & OCR / IDP")
-    onglet_assistant, onglet_ocr, onglet_communications = sous_menu(
-        "ia", ["💬 Assistant fiscal & douanier", "🔎 Extraction OCR de factures", "✉️ Communications"])
+    onglet_assistant, onglet_ocr, onglet_communications, onglet_methodo = sous_menu(
+        "ia", ["💬 Assistant fiscal & douanier", "🔎 Extraction OCR de factures", "✉️ Communications",
+               "📘 Méthodologie & résultats"])
+    if onglet_methodo:
+        try:
+            import sndgir_methodo
+            import sndgir_logistique as _lg
+            sndgir_methodo.render_methodologie(_lg._modele_retard(), _lg._modele_controle())
+        except Exception as exc:
+            st.error("La page méthodologie n'a pas pu s'afficher (scikit-learn manquant ?).")
+            st.code(str(exc))
     if onglet_assistant:
         st.caption("Assistant expert douane, import-export, fiscalité DGI et SYSCOHADA. Il s'appuie "
                    "sur une base de textes (socle intégré + vos décrets, arrêtés et circulaires) et "
