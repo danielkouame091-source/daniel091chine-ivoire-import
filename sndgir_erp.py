@@ -681,7 +681,7 @@ CREATE TABLE IF NOT EXISTS fne_factures (
 
 
 from sndgir_export import bouton_export  # noqa: E402  (exports Excel / PDF)
-from sndgir_menu import (CSS_BARRE, CSS_LEGER, CSS_SOUS_MENU, mode_leger, html_alerte_demo, html_audit, html_marque,  # noqa: E402
+from sndgir_menu import (CSS_TABLEAU, html_bandeau, html_grille, html_kpi, html_surveiller, CSS_BARRE, CSS_LEGER, CSS_SOUS_MENU, mode_leger, html_alerte_demo, html_audit, html_marque,  # noqa: E402
                          html_profil, sous_menu)
 import sndgir_suivi  # noqa: E402  (suivi des expéditions, crédit documentaire, prix de revient)
 
@@ -3140,7 +3140,7 @@ section[data-testid="stSidebar"] hr{border-color:rgba(255,255,255,.07);}
 
 def injecter_theme() -> None:
     st.markdown(CSS_THEME_3D, unsafe_allow_html=True)
-    st.markdown(f"<style>{CSS_SOUS_MENU}{CSS_BARRE}{CSS_LEGER if mode_leger() else ''}</style>", unsafe_allow_html=True)
+    st.markdown(f"<style>{CSS_SOUS_MENU}{CSS_BARRE}{CSS_TABLEAU}{CSS_LEGER if mode_leger() else ''}</style>", unsafe_allow_html=True)
 
 
 def carte_kpi(titre: str, valeur: str, sous_texte: str = "", niveau: str = "bleu") -> None:
@@ -3335,17 +3335,23 @@ def onglet_tableau_de_bord() -> None:
     dossiers = lister_dossiers()
     etats = etats_financiers()
 
-    colonnes = st.columns(4)
-    with colonnes[0]:
-        carte_kpi("Dossiers actifs", f"{len(dossiers)}", "tous statuts", "bleu")
-    with colonnes[1]:
-        carte_kpi("Chiffre d'affaires", f"{etats['produits']:,.0f}", "FCFA", "vert")
-    with colonnes[2]:
-        niveau = "vert" if etats["resultat"] >= 0 else "rouge"
-        carte_kpi("Résultat net", f"{etats['resultat']:,.0f}", "FCFA", niveau)
-    with colonnes[3]:
-        solde = dossiers["solde_du"].sum() if not dossiers.empty else 0
-        carte_kpi("Soldes à recouvrer", f"{solde:,.0f}", "FCFA", "jaune")
+    solde = float(dossiers["solde_du"].sum()) if not dossiers.empty else 0.0
+    en_cours = int((dossiers["statut"] == "En cours").sum()) if not dossiers.empty else 0
+    rouges = int((dossiers["canal_risque"] == "ROUGE").sum()) if not dossiers.empty else 0
+    impayes = int((dossiers["solde_du"] > 0).sum()) if not dossiers.empty else 0
+    st.markdown(html_bandeau(st.session_state.get("username", ""), st.session_state.get("entreprise_nom", ""),
+                             f"{len(dossiers)} dossier(s) · {en_cours} en cours"), unsafe_allow_html=True)
+    st.markdown(html_grille([
+        html_kpi("📁", "Dossiers", f"{len(dossiers)}", "", f"{en_cours} en cours", "bleu"),
+        html_kpi("💰", "Chiffre d'affaires", f"{etats['produits']:,.0f}".replace(",", " "), "FCFA", "total des produits", "vert"),
+        html_kpi("📈", "Résultat net", f"{etats['resultat']:,.0f}".replace(",", " "), "FCFA",
+                 "bénéfice" if etats["resultat"] >= 0 else "perte", "vert" if etats["resultat"] >= 0 else "rouge"),
+        html_kpi("⏳", "À encaisser", f"{solde:,.0f}".replace(",", " "), "FCFA", f"{impayes} dossier(s) non soldé(s)", "orange"),
+    ]), unsafe_allow_html=True)
+    st.markdown("**👀 À surveiller**")
+    st.markdown(html_surveiller([("dossier(s) en canal ROUGE (contrôle complet)", rouges, "rouge"),
+                                 ("dossier(s) avec un solde à encaisser", impayes, "orange")]),
+                unsafe_allow_html=True)
 
     colonne_gauche, colonne_droite = st.columns(2)
     with colonne_gauche:

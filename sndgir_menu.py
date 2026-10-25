@@ -150,3 +150,72 @@ CSS_LEGER = """
 def mode_leger() -> bool:
     """Vrai si l'utilisateur a activé le mode léger (moins d'effets, pas de carte ni de graphiques lourds)."""
     return bool(st.session_state.get("mode_leger", False))
+
+
+# ───────────── Tableau de bord d'accueil : bandeau + gros indicateurs ─────────────
+CSS_TABLEAU = """
+.tb-bandeau{position:relative;overflow:hidden;border-radius:26px;padding:26px 30px;margin:4px 0 22px;
+  background:linear-gradient(135deg,rgba(10,132,255,.35),rgba(94,92,230,.28) 55%,rgba(191,90,242,.22));
+  border:1px solid rgba(255,255,255,.18);
+  box-shadow:0 1px 0 rgba(255,255,255,.25) inset,0 26px 50px -22px rgba(10,132,255,.55);}
+.tb-bandeau::after{content:"";position:absolute;right:-60px;top:-60px;width:220px;height:220px;border-radius:50%;
+  background:radial-gradient(circle,rgba(255,255,255,.22),transparent 65%);}
+.tb-salut{font-size:1.9rem;font-weight:800;color:#fff;letter-spacing:-.02em;}
+.tb-sous{margin-top:4px;font-size:1.02rem;color:#d6e2ff;}
+.tb-grille{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:18px;margin-bottom:22px;}
+.tb-kpi{--tc:#0A84FF;position:relative;border-radius:26px;padding:22px 22px 20px;
+  background:var(--glass);border:1px solid var(--edge);backdrop-filter:blur(18px);
+  box-shadow:0 1px 0 rgba(255,255,255,.18) inset,0 22px 40px -18px rgba(0,0,0,.85),0 12px 30px -18px var(--tc);
+  transition:transform .25s cubic-bezier(.2,.8,.2,1),box-shadow .25s ease;}
+.tb-kpi:hover{transform:translateY(-6px) perspective(700px) rotateX(3deg);
+  box-shadow:0 1px 0 rgba(255,255,255,.25) inset,0 32px 50px -18px rgba(0,0,0,.9),0 0 34px -8px var(--tc);}
+.tb-kpi::before{content:"";position:absolute;left:22px;right:22px;top:0;height:4px;border-radius:0 0 6px 6px;background:var(--tc);}
+.tb-ico{width:54px;height:54px;border-radius:17px;display:flex;align-items:center;justify-content:center;font-size:1.9rem;
+  background:linear-gradient(145deg,var(--tc),color-mix(in srgb,var(--tc) 50%,#000));
+  box-shadow:0 10px 20px -8px var(--tc),0 1px 0 rgba(255,255,255,.4) inset;margin-bottom:14px;}
+.tb-titre{font-size:.95rem;font-weight:700;color:#aeb8cc;letter-spacing:.02em;}
+.tb-valeur{font-size:2.5rem;font-weight:800;color:#fff;line-height:1.15;letter-spacing:-.03em;overflow-wrap:anywhere;}
+.tb-unite{font-size:1rem;font-weight:700;color:var(--tc);margin-left:6px;}
+.tb-note{margin-top:6px;font-size:.92rem;color:#c3cbda;}
+.tb-surveiller{display:flex;flex-wrap:wrap;gap:12px;margin:0 0 22px;}
+.tb-pastille{display:flex;align-items:center;gap:10px;padding:12px 18px;border-radius:18px;font-size:1rem;font-weight:700;
+  background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);color:#f5f7fa;}
+.tb-pastille b{font-size:1.4rem;}
+.tb-pastille.rouge{background:rgba(255,69,58,.16);border-color:rgba(255,69,58,.5);}
+.tb-pastille.orange{background:rgba(255,159,10,.16);border-color:rgba(255,159,10,.5);}
+.tb-pastille.vert{background:rgba(48,209,88,.14);border-color:rgba(48,209,88,.45);}
+@media (max-width:640px){.tb-salut{font-size:1.4rem}.tb-valeur{font-size:2rem}}
+"""
+
+_COULEURS_TB = {"bleu": "#0A84FF", "vert": "#30D158", "orange": "#FF9F0A", "rouge": "#FF453A", "violet": "#BF5AF2"}
+
+
+def _echapper(texte) -> str:
+    import html
+    return html.escape(str(texte))
+
+
+def html_bandeau(utilisateur: str, entreprise: str, resume: str) -> str:
+    return (f'<div class="tb-bandeau"><div class="tb-salut">Bonjour {_echapper(utilisateur)} 👋</div>'
+            f'<div class="tb-sous">{_echapper(entreprise)} · {_echapper(resume)}</div></div>')
+
+
+def html_kpi(icone: str, titre: str, valeur: str, unite: str = "", note: str = "", couleur: str = "bleu") -> str:
+    tc = _COULEURS_TB.get(couleur, _COULEURS_TB["bleu"])
+    u = f'<span class="tb-unite">{_echapper(unite)}</span>' if unite else ""
+    n = f'<div class="tb-note">{_echapper(note)}</div>' if note else ""
+    return (f'<div class="tb-kpi" style="--tc:{tc}"><div class="tb-ico">{icone}</div>'
+            f'<div class="tb-titre">{_echapper(titre)}</div><div class="tb-valeur">{_echapper(valeur)}{u}</div>{n}</div>')
+
+
+def html_grille(cartes: list[str]) -> str:
+    return '<div class="tb-grille">' + "".join(cartes) + "</div>"
+
+
+def html_surveiller(points: list[tuple[str, int, str]]) -> str:
+    """points : (texte, nombre, niveau) ; niveau = rouge / orange / vert. Un nombre à 0 devient « vert »."""
+    morceaux = []
+    for texte, nombre, niveau in points:
+        niv = niveau if nombre > 0 else "vert"
+        morceaux.append(f'<div class="tb-pastille {niv}"><b>{int(nombre)}</b> {_echapper(texte)}</div>')
+    return '<div class="tb-surveiller">' + "".join(morceaux) + "</div>"
