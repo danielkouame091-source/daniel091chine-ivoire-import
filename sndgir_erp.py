@@ -687,8 +687,10 @@ import sndgir_suivi  # noqa: E402  (suivi des expéditions, crédit documentaire
 _SCHEMA += sndgir_suivi.SCHEMA_SUIVI
 
 import sndgir_tour  # noqa: E402  (tour de contrôle des expéditions)
+import sndgir_retours  # noqa: E402  (avis des testeurs)
 
 _SCHEMA += sndgir_tour.SCHEMA_TOUR
+_SCHEMA += sndgir_retours.SCHEMA_RETOURS
 
 
 def init_db() -> None:
@@ -3212,6 +3214,9 @@ def barre_laterale() -> str:
                 st.session_state["comptes_demo"] = comptes_mot_de_passe_demo()
             if st.session_state["comptes_demo"]:
                 st.markdown(html_alerte_demo(st.session_state["comptes_demo"]), unsafe_allow_html=True)
+        with st.expander("💬 Mon avis"):
+            sndgir_retours.render_formulaire(connexion, journaliser, tenant_courant(),
+                                             st.session_state.get("username", "—"), st.session_state.get("user_role", ""))
         with st.expander("⚙️ Réglages"):
             st.text_input("Clé API Groq (session)", type="password", key="groq_api_key_input",
                           value=st.session_state.get("groq_api_key", ""))
@@ -4146,8 +4151,10 @@ def onglet_administration() -> None:
     if not exiger("*"):
         return
     st.subheader("🛡️ Administration, sécurité & piste d'audit")
-    onglet_tenants, onglet_utilisateurs, onglet_audit, onglet_taux = sous_menu(
-        "admin", ["🏢 Entreprises", "👥 Utilisateurs", "🔐 Piste d'audit", "💱 Taux de change"])
+    onglet_tenants, onglet_utilisateurs, onglet_audit, onglet_taux, onglet_retours = sous_menu(
+        "admin", ["🏢 Entreprises", "👥 Utilisateurs", "🔐 Piste d'audit", "💱 Taux de change", "💬 Retours d'essai"])
+    if onglet_retours:
+        sndgir_retours.render_synthese(lire_df, tenant_courant())
     if onglet_tenants:
         with st.form("form_tenant"):
             colonnes = st.columns(3)
