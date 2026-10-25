@@ -225,3 +225,9 @@ Deux nouveaux onglets : « Suivi marchandise & crédit documentaire » (expédit
 saisies, distance restante, progression, arrivée estimée, carte, déblocage du crédit documentaire seulement si
 l'arrivée est confirmée) et « Prix de revient » (CAF + droits + taxes + frais, par unité). Code : `sndgir_suivi.py`,
 test : `python3 valider_suivi.py`. Positions saisies à la main, distances à vol d'oiseau.
+
+## Tour de contrôle des expéditions
+Onglet « Tour de contrôle » (Transit & Douanes) : toutes les expéditions sur un écran, 12 jalons (vocabulaire du PCS
+du GUCE : e-Voyage, e-Manifest, e-Movement, e-Release), franchise restante, surestaries estimées, crédit documentaire
+bloqué, solde client, score de risque par RÈGLES de gestion (pas d'IA) et message WhatsApp prêt pour le client.
+Pas de connexion automatique au PCS : jalons saisis à la main. Test : `python3 valider_suivi.py`.

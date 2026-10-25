@@ -684,6 +684,10 @@ import sndgir_suivi  # noqa: E402  (suivi des expéditions, crédit documentaire
 
 _SCHEMA += sndgir_suivi.SCHEMA_SUIVI
 
+import sndgir_tour  # noqa: E402  (tour de contrôle des expéditions)
+
+_SCHEMA += sndgir_tour.SCHEMA_TOUR
+
 
 def init_db() -> None:
     """Crée le schéma et insère le jeu de données professionnel (idempotent)."""
@@ -698,6 +702,7 @@ def init_db() -> None:
 # Colonnes ajoutées après la première mise en production : la migration est
 # idempotente et s'applique sans perte de données aux bases déjà existantes.
 _MIGRATIONS_COLONNES = {
+    **sndgir_tour.MIGRATIONS_TOUR,
     "dossiers": [
         ("code_sh", "TEXT"),
         ("quantite", "REAL DEFAULT 0"),
@@ -3370,10 +3375,10 @@ def onglet_transit() -> None:
         return
     st.subheader("🚢 Transit, Import-Export & Douanes")
     (onglet_dossiers, onglet_calcul, onglet_manifestes, onglet_surestaries, onglet_documents,
-     onglet_tarif, onglet_parcours, onglet_suivi, onglet_revient) = st.tabs(
+     onglet_tarif, onglet_parcours, onglet_suivi, onglet_revient, onglet_tour) = st.tabs(
         ["Dossiers", "Calculateur douanier", "Manifestes & B/L", "Surestaries", "Documents PDF",
          "Tarif & taxes", "Parcours officiel & FNE", "Suivi marchandise & crédit documentaire",
-         "Prix de revient"])
+         "Prix de revient", "Tour de contrôle"])
 
     with onglet_dossiers:
         if exiger("transit.creer"):
@@ -3863,6 +3868,10 @@ def onglet_transit() -> None:
     with onglet_suivi:
         sndgir_suivi.render_suivi(lire_df, connexion, journaliser, exiger, tenant_courant(),
                                   st.session_state.get("username", "système"))
+
+    with onglet_tour:
+        sndgir_tour.render_tour(lire_df, connexion, journaliser, exiger, tenant_courant(),
+                                st.session_state.get("username", "système"), sndgir_suivi.etat_expedition)
 
     with onglet_revient:
         sndgir_suivi.render_prix_revient(lire_df, tenant_courant())
