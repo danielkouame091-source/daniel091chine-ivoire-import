@@ -490,6 +490,61 @@ def tester_parcours_dus_fne() -> None:
             erp.supprimer_droit_sortie(int(ligne["id"]))
 
 
+def tester_assistant_expert() -> None:
+    print("\n— Assistant IA expert : base de connaissances et garde-fous —")
+    r = erp.rechercher_connaissances("Quel est le droit unique de sortie pour le cacao ?")
+    _verifier(bool(r) and "Droit Unique de Sortie" in r[0]["titre"], "Recherche : le DUS arrive en premier")
+    r = erp.rechercher_connaissances("quand la facture normalisée électronique est-elle obligatoire")
+    _verifier(bool(r) and "FNE" in r[0]["titre"], "Recherche : la FNE est trouvée (accents et pluriels ignorés)")
+    r = erp.rechercher_connaissances("documents pour importer en C100")
+    _verifier(any("Pièces" in x["titre"] or "Procédure" in x["titre"] for x in r), "Recherche : pièces d'un import")
+    _verifier(erp.rechercher_connaissances("recette de cuisine du poulet braisé") == [],
+              "Recherche : question hors sujet sans extrait")
+    passages = erp.decouper_passages("Phrase un. " * 400, taille=300)
+    _verifier(len(passages) > 3 and all(len(p) <= 320 for p in passages), "Découpage en passages courts")
+
+    n = erp.ajouter_connaissance("TEST Arrêté fictif sur les conteneurs", "TEST", "Douane",
+                                 "Le zorglub de conteneur est limité à quarante jours de franchise.")
+    _verifier(n >= 1, "Document ajouté à la base du cabinet")
+    r = erp.rechercher_connaissances("zorglub franchise conteneur")
+    _verifier(bool(r) and r[0]["origine"] == "Base du cabinet", "Le texte ajouté est retrouvé")
+    ancien = erp.st.session_state["tenant_id"]
+    autres = [int(t) for t in erp.lister_tenants()["id"] if int(t) != ancien]
+    if autres:
+        erp.st.session_state["tenant_id"] = autres[0]
+        r2 = erp.rechercher_connaissances("zorglub franchise conteneur")
+        _verifier(not any(x["origine"] == "Base du cabinet" for x in r2), "Isolation : base d'un autre cabinet invisible")
+        erp.st.session_state["tenant_id"] = ancien
+    for _, l in erp.lister_connaissances().iterrows():
+        if str(l["titre"]).startswith("TEST"):
+            erp.supprimer_connaissance(int(l["id"]))
+    _verifier(not erp.rechercher_connaissances("zorglub franchise conteneur")
+              or erp.rechercher_connaissances("zorglub franchise conteneur")[0]["origine"] != "Base du cabinet",
+              "Suppression du document de test")
+
+    messages, sources = erp.construire_messages_ia("Droit unique de sortie du cacao 1801.00.00.00")
+    systeme = messages[0]["content"]
+    _verifier("N'invente JAMAIS" in systeme and "[S1]" in systeme, "Prompt : règle anti-invention et sources numérotées")
+    _verifier("hors de ces domaines" in systeme, "Prompt : refus hors domaine")
+    messages_vides, _ = erp.construire_messages_ia("zxqv wxyz")
+    _verifier("AUCUNE SOURCE PERTINENTE" in messages_vides[0]["content"], "Prompt : absence de source signalée")
+
+    dossiers = erp.lister_dossiers()
+    contexte = erp.contexte_dossier_ia(int(dossiers.iloc[0]["id"]))
+    _verifier(str(dossiers.iloc[0]["reference"]) in contexte and "Pièces manquantes" in contexte, "Contexte du dossier injecté")
+    msgs, _ = erp.construire_messages_ia("Où en est ce dossier ?", int(dossiers.iloc[0]["id"]))
+    _verifier("DONNÉES DU DOSSIER" in msgs[0]["content"], "Prompt : données du dossier jointes")
+
+    erp.st.session_state["groq_api_key"] = ""
+    res = erp.poser_question_expert("Que faire pour le dédouanement à l'importation ?")
+    _verifier(res["mode"] in ("extraits", "ia") and res["reponse"], "Réponse même sans clé IA (mode extraits)")
+    try:
+        erp.poser_question_expert("   ")
+        _verifier(False, "Question vide refusée")
+    except ValueError:
+        _verifier(True, "Question vide refusée")
+
+
 def main() -> int:
     print("═" * 62)
     print(f" VALIDATION FONCTIONNELLE — {erp.APP_NAME} v{erp.APP_VERSION}")
@@ -505,6 +560,7 @@ def main() -> int:
     tester_conformite_dossier()
     tester_tarif_et_taxes()
     tester_parcours_dus_fne()
+    tester_assistant_expert()
     tester_tenant()
     tester_comptes()
     tester_rbac_isolation()

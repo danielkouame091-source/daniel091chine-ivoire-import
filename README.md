@@ -134,9 +134,19 @@ Le cœur applicatif tient dans un **bloc Python unique et exécutable** :
     (refacturés hors taxes), le fret, le transport et les honoraires soumis à TVA.
 
 ### 4. Intelligence artificielle & OCR (IDP)
-- **Assistant expert** fiscalité / droit douanier ivoirien connecté à l'API
-  **Groq** (modèle par défaut : `llama-3.1-8b-instant`), avec repli explicite
-  si la clé ou la librairie sont absentes.
+- **Assistant expert** douane ivoirienne, import-export, fiscalité DGI et SYSCOHADA (API **Groq** ;
+  modèle par défaut  avec repli sur , modifiable par
+  ). Il s'appuie sur :
+  - un **socle intégré** de fiches sourcées (procédure de dédouanement, DUS, FNE, Certificat de
+    Conformité, calcul des droits, pièces, canaux) ;
+  - une **base de connaissances du cabinet** (Administration de l'IA : collez ou chargez vos décrets,
+    arrêtés, circulaires, notes) — recherche par pertinence, isolée par tenant ;
+  - les **données du dossier choisi** (chiffres, pièces manquantes, étapes du parcours) et les
+    taux / taxes configurés pour les codes SH cités dans la question.
+- **Garde-fous** : l'assistant cite ses sources [S1], [S2]…, dit « je n'ai pas cette précision »
+  plutôt que d'inventer un numéro de décret, un article ou un taux, ignore les instructions
+  cachées dans les textes, et refuse poliment les sujets hors domaine.
+- **Sans clé IA**, il affiche les extraits les plus proches de la base de connaissances.
 - **Extraction OCR/IDP** de factures fournisseurs (fournisseur, n° de facture,
   date, montants, désignation) — fonctionne hors-ligne, une sortie OCR externe
   peut alimenter la même interface.
@@ -198,7 +208,7 @@ PostgreSQL ; le moteur métier de `sndgir_erp.py` est transposable via SQLAlchem
 ## ✅ État de validation
 
 ```
-115 validations · 0 échec   (python3 valider_sndgir.py)
+131 validations · 0 échec   (python3 valider_sndgir.py)
 Sécurité ✓  Audit immuable ✓  Partie double ✓  Douanes ✓  Surestaries ✓
 OCR/IDP ✓  Transit & B/L ✓  Multi-tenant & RBAC ✓  PDF scellés ✓
 Conformité documentaire ✓  Cycle de vie du dossier ✓  Comptes & blocage ✓
