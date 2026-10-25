@@ -245,3 +245,19 @@ Pas de connexion automatique au PCS : jalons saisis à la main. Test : `python3 
 Les onglets à l'intérieur de chaque grande tuile (Transit & Douanes, Comptabilité, IA & OCR, Administration,
 Analyse financière IA…) sont remplacés par de petites tuiles carrées, comme un écran de téléphone. Code :
 `sndgir_menu.py` (fonction `sous_menu`). Seule la section choisie est affichée et calculée.
+
+## 🛡️ Sécurité (étape 5)
+
+- **Double authentification (2FA)** : menu *Administration → 🛡️ Sécurité & sauvegarde*. Compatible Google/Microsoft Authenticator.
+- **Sauvegarde** : bouton « Télécharger la copie » (à garder sur votre ordinateur) ou copie dans le dossier `sauvegardes/` (7 dernières gardées).
+- **Mode production** (aucun compte de démonstration) :
+  ```bash
+  export SNDGIR_PRODUCTION=1
+  export SNDGIR_ADMIN_MDP='VotreMotDePasseSolide2026'   # au moins 10 caractères
+  streamlit run sndgir_erp.py
+  ```
+  À faire AVANT le premier lancement avec une base neuve (supprimez l'ancien fichier `sndgir_erp.db` de démonstration).
+  Sur Streamlit Cloud : mettez ces deux valeurs dans *Settings → Secrets / Environment*.
+- Test : `python3 valider_securite.py` (vecteurs officiels RFC 6238).
+
+**Limites honnêtes** : sur Streamlit Cloud le disque est temporaire (la base peut être remise à zéro) — pour de vrais clients, hébergez sur un serveur avec disque durable. Pas de blocage par adresse IP, pas de codes de secours 2FA.

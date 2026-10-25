@@ -689,6 +689,7 @@ _SCHEMA += sndgir_suivi.SCHEMA_SUIVI
 
 import sndgir_tour  # noqa: E402  (tour de contrôle des expéditions)
 import sndgir_retours  # noqa: E402  (avis des testeurs)
+import sndgir_securite  # noqa: E402  (2FA, sauvegardes, mode production)
 
 _SCHEMA += sndgir_tour.SCHEMA_TOUR
 _SCHEMA += sndgir_retours.SCHEMA_RETOURS
@@ -708,6 +709,7 @@ def init_db() -> None:
 # idempotente et s'applique sans perte de données aux bases déjà existantes.
 _MIGRATIONS_COLONNES = {
     **sndgir_tour.MIGRATIONS_TOUR,
+    **sndgir_securite.MIGRATIONS_SECURITE,
     "dossiers": [
         ("code_sh", "TEXT"),
         ("quantite", "REAL DEFAULT 0"),
@@ -792,18 +794,30 @@ def _seed_tenant_demo() -> None:
             ("demo-ci", "Cabinet Excellence Comptable CI", "Côte d'Ivoire", "Réel normal", ts),
         )
         tenant_id = cur.lastrowid
-        for username, mdp, role, email in [
-            ("admin", "admin123", "Administrateur Système", "admin@excellence.ci"),
-            ("expert", "expert123", "Expert-Comptable signataire", "expert@excellence.ci"),
-            ("collab", "collab123", "Collaborateur", "collab@excellence.ci"),
-            ("auditeur", "audit123", "Auditeur externe", "audit@cabinet.ci"),
-        ]:
+        if sndgir_securite.mode_production():
+            # Production : un seul compte admin, mot de passe choisi par vous, aucune donnée fictive.
+            comptes_initiaux = [("admin", sndgir_securite.mot_de_passe_admin_initial(MOT_DE_PASSE_MIN),
+                                 "Administrateur Système", "")]
+        else:
+            comptes_initiaux = [
+                ("admin", "admin123", "Administrateur Système", "admin@excellence.ci"),
+                ("expert", "expert123", "Expert-Comptable signataire", "expert@excellence.ci"),
+                ("collab", "collab123", "Collaborateur", "collab@excellence.ci"),
+                ("auditeur", "audit123", "Auditeur externe", "audit@cabinet.ci"),
+            ]
+        for username, mdp, role, email in comptes_initiaux:
             empreinte, sel = hash_mot_de_passe(mdp)
             conn.execute(
                 "INSERT INTO utilisateurs (tenant_id, username, empreinte, sel, role, email, created_at)"
                 " VALUES (?,?,?,?,?,?,?)",
                 (tenant_id, username, empreinte, sel, role, email, ts),
             )
+        if sndgir_securite.mode_production():
+            conn.executemany(
+                "INSERT INTO taux_change (devise, taux_vers_xof, source, date_maj) VALUES (?,?,?,?)",
+                [("XOF", 1.0, "fixe", ts), ("EUR", 655.957, "fixe UEMOA", ts)],
+            )
+            return
         conn.executemany(
             "INSERT OR IGNORE INTO articles (tenant_id, nom, sh, dd, categorie) VALUES (?,?,?,?,?)",
             [
@@ -1031,6 +1045,36 @@ def authentifier(tenant_id: int, username: str, mot_de_passe: str) -> dict | Non
     journaliser("login_reussi", "utilisateurs", str(ligne["id"]), f"role={ligne['role']}",
                 username=username, role=ligne["role"], tenant_id=tenant_id)
     return dict(ligne)
+
+
+def activer_totp(tenant_id: int, username: str, secret: str, code: str) -> bool:
+    """Active la double authentification si le code saisi correspond au secret montré."""
+    if not sndgir_securite.verifier_totp(secret, code):
+        return False
+    with connexion() as conn:
+        conn.execute("UPDATE utilisateurs SET totp_secret=?, totp_actif=1 WHERE tenant_id=? AND username=?",
+                     (secret, tenant_id, username))
+    journaliser("2fa_activee", "utilisateurs", username, "", username=username, tenant_id=tenant_id)
+    return True
+
+
+def desactiver_totp(tenant_id: int, username: str, par: str) -> None:
+    with connexion() as conn:
+        conn.execute("UPDATE utilisateurs SET totp_secret=NULL, totp_actif=0 WHERE tenant_id=? AND username=?",
+                     (tenant_id, username))
+    journaliser("2fa_desactivee", "utilisateurs", username, f"par {par}", tenant_id=tenant_id)
+
+
+def verifier_second_facteur(fiche: dict, code: str) -> bool:
+    """Contrôle le code à 6 chiffres lors de la connexion (blocage après trop d'échecs)."""
+    tid, nom = int(fiche["tenant_id"]), fiche["username"]
+    if connexion_bloquee(tid, nom):
+        return False
+    if sndgir_securite.verifier_totp(fiche.get("totp_secret") or "", code):
+        return True
+    journaliser("login_echec", "utilisateurs", str(fiche["id"]), "code 2FA invalide",
+                username=nom, tenant_id=tid)
+    return False
 
 
 def tenant_courant() -> int:
@@ -3168,6 +3212,30 @@ def ecran_connexion() -> bool:
 
     colonne_gauche, colonne_milieu, colonne_droite = st.columns([1, 1.2, 1])
     with colonne_milieu:
+        if st.session_state.get("attente_2fa"):
+            fiche_2fa = st.session_state["attente_2fa"]
+            with st.form("form_2fa"):
+                st.markdown(f"🔐 **Code de sécurité** pour {fiche_2fa['username']}")
+                st.caption("Ouvrez votre application d'authentification (Google Authenticator…) "
+                           "et tapez le code à 6 chiffres.")
+                code_2fa = st.text_input("Code à 6 chiffres", max_chars=6)
+                valide_2fa = st.form_submit_button("Valider", use_container_width=True)
+            if st.button("← Retour", key="retour_2fa"):
+                st.session_state.pop("attente_2fa", None)
+                st.rerun()
+            if valide_2fa:
+                if verifier_second_facteur(fiche_2fa, code_2fa):
+                    st.session_state.pop("attente_2fa", None)
+                    st.session_state.update({
+                        "authentifie": True, "tenant_id": fiche_2fa["tenant_id"],
+                        "username": fiche_2fa["username"], "user_role": fiche_2fa["role"],
+                    })
+                    st.rerun()
+                elif connexion_bloquee(int(fiche_2fa["tenant_id"]), fiche_2fa["username"]):
+                    st.error(f"Trop de tentatives échouées. Réessayez dans {CONNEXIONS_FENETRE_MIN} minutes.")
+                else:
+                    st.error("Code incorrect.")
+            return False
         with st.form("form_connexion"):
             options = {int(ligne["id"]): f"{ligne['raison_sociale']} ({ligne['slug']})"
                        for _, ligne in tenants.iterrows()}
@@ -3180,6 +3248,7 @@ def ecran_connexion() -> bool:
             st.caption("Démo : " + " · ".join(f"{u}/{m}" for u, m in MOTS_DE_PASSE_DEMO.items()))
 
         if valide:
+            st.session_state.pop("attente_2fa", None)
             fiche = authentifier(int(tenant_id), username, mot_de_passe)
             if not fiche:
                 if connexion_bloquee(int(tenant_id), username):
@@ -3188,6 +3257,9 @@ def ecran_connexion() -> bool:
                 else:
                     st.error("Identifiants invalides.")
                 return False
+            if fiche.get("totp_actif"):
+                st.session_state["attente_2fa"] = fiche
+                st.rerun()
             st.session_state.update({
                 "authentifie": True,
                 "tenant_id": fiche["tenant_id"],
@@ -4153,12 +4225,86 @@ def onglet_portail_client() -> None:
                      use_container_width=True)
 
 
+def onglet_securite() -> None:
+    """Double authentification, sauvegardes et état de la configuration de sécurité."""
+    tid, nom = tenant_courant(), st.session_state.get("username", "")
+    st.markdown("##### 🔐 Double authentification (2FA)")
+    fiche = lire_df("SELECT totp_actif FROM utilisateurs WHERE tenant_id=? AND username=?", (tid, nom))
+    actif = (not fiche.empty) and int(fiche.iloc[0]["totp_actif"] or 0) == 1
+    if actif:
+        st.success("La double authentification est ACTIVE sur votre compte.")
+        if st.button("Désactiver ma double authentification"):
+            desactiver_totp(tid, nom, nom)
+            st.rerun()
+    else:
+        st.info("Pas encore activée. Avec elle, un mot de passe volé ne suffit plus pour entrer.")
+        cle = f"secret_2fa_{tid}_{nom}"
+        if cle not in st.session_state:
+            st.session_state[cle] = sndgir_securite.generer_secret()
+        secret = st.session_state[cle]
+        st.markdown("1. Installez **Google Authenticator** (ou Microsoft Authenticator) sur votre téléphone.  \n"
+                    "2. Ajoutez un compte avec la **clé** ci-dessous (saisie manuelle).  \n"
+                    "3. Tapez le code à 6 chiffres affiché pour confirmer.")
+        st.code(secret)
+        with st.expander("Lien pour application (avancé)"):
+            st.code(sndgir_securite.uri_otpauth(secret, f"{nom}@{tid}"))
+        with st.form("form_activer_2fa"):
+            code = st.text_input("Code à 6 chiffres", max_chars=6)
+            if st.form_submit_button("Activer"):
+                if activer_totp(tid, nom, secret, code):
+                    st.session_state.pop(cle, None)
+                    st.success("Double authentification activée.")
+                    st.rerun()
+                else:
+                    st.error("Code incorrect. Vérifiez l'heure de votre téléphone et réessayez.")
+    if st.session_state.get("user_role") == "Administrateur Système":
+        autres = lire_df("SELECT username FROM utilisateurs WHERE tenant_id=? AND totp_actif=1 AND username<>?",
+                         (tid, nom))
+        if not autres.empty:
+            with st.form("form_reset_2fa"):
+                cible = st.selectbox("Retirer la 2FA d'un collègue (téléphone perdu)", autres["username"].tolist())
+                if st.form_submit_button("Retirer"):
+                    desactiver_totp(tid, cible, nom)
+                    st.success(f"2FA retirée pour {cible}.")
+
+    st.markdown("##### 💾 Sauvegarde de la base")
+    st.caption("Faites une copie régulièrement. Sur Streamlit Cloud les fichiers peuvent disparaître au "
+               "redémarrage : téléchargez la copie et gardez-la sur votre ordinateur.")
+    colonnes = st.columns(2)
+    with colonnes[0]:
+        if st.button("Préparer une copie à télécharger", use_container_width=True):
+            st.session_state["copie_base"] = sndgir_securite.sauvegarde_en_octets(DB_PATH)
+            journaliser("sauvegarde_telechargee", "base", "", "", tenant_id=tid)
+        if st.session_state.get("copie_base"):
+            st.download_button("⬇️ Télécharger la copie", st.session_state["copie_base"],
+                               file_name=f"sndgir_sauvegarde_{date.today():%Y%m%d}.db",
+                               mime="application/octet-stream", use_container_width=True)
+    with colonnes[1]:
+        if st.button("Copie dans le dossier « sauvegardes »", use_container_width=True):
+            chemin = sndgir_securite.sauvegarder_base(DB_PATH, BASE_DIR / "sauvegardes", garder=7)
+            journaliser("sauvegarde_dossier", "base", chemin.name, "", tenant_id=tid)
+            st.success(f"Copie faite : {chemin.name} (les 7 dernières sont gardées).")
+
+    st.markdown("##### ✅ État de la sécurité")
+    etat = [
+        ("Mode production (sans comptes de démonstration)", sndgir_securite.mode_production()),
+        ("Accès direct sans mot de passe désactivé", not acces_direct_actif()),
+        ("Aucun compte avec un mot de passe de démonstration", not comptes_mot_de_passe_demo()),
+        ("Votre double authentification est active", actif),
+    ]
+    for texte, ok in etat:
+        st.write(("✅ " if ok else "⚠️ ") + texte)
+
+
 def onglet_administration() -> None:
     if not exiger("*"):
         return
     st.subheader("🛡️ Administration, sécurité & piste d'audit")
-    onglet_tenants, onglet_utilisateurs, onglet_audit, onglet_taux, onglet_retours = sous_menu(
-        "admin", ["🏢 Entreprises", "👥 Utilisateurs", "🔐 Piste d'audit", "💱 Taux de change", "💬 Retours d'essai"])
+    onglet_tenants, onglet_utilisateurs, onglet_audit, onglet_taux, onglet_retours, onglet_secu = sous_menu(
+        "admin", ["🏢 Entreprises", "👥 Utilisateurs", "🔐 Piste d'audit", "💱 Taux de change", "💬 Retours d'essai",
+                  "🛡️ Sécurité & sauvegarde"])
+    if onglet_secu:
+        onglet_securite()
     if onglet_retours:
         sndgir_retours.render_synthese(lire_df, tenant_courant(), bouton_export)
     if onglet_tenants:
