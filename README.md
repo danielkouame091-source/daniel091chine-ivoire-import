@@ -135,8 +135,8 @@ Le cœur applicatif tient dans un **bloc Python unique et exécutable** :
 
 ### 4. Intelligence artificielle & OCR (IDP)
 - **Assistant expert** douane ivoirienne, import-export, fiscalité DGI et SYSCOHADA (API **Groq** ;
-  modèle par défaut  avec repli sur , modifiable par
-  ). Il s'appuie sur :
+  modèle par défaut `llama-3.3-70b-versatile` avec repli sur `llama-3.1-8b-instant`, modifiable par
+  `GROQ_MODEL`). Il s'appuie sur :
   - un **socle intégré** de fiches sourcées (procédure de dédouanement, DUS, FNE, Certificat de
     Conformité, calcul des droits, pièces, canaux) ;
   - une **base de connaissances du cabinet** (Administration de l'IA : collez ou chargez vos décrets,
