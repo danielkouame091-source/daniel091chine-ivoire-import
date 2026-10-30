@@ -103,7 +103,7 @@ def validate_sql(sql, allowed_tables):
 # --- 3. Boucle avec retry -----------------------------------------------------
 def call_llm(system_prompt, messages):
     """
-    <- À REMPLACER par votre appel actuel (Claude, Gemini, OpenAI...).
+    <- À REMPLACER par votre appel actuel (Gemini, OpenAI, ...).
     Doit retourner le texte de la réponse du modèle.
     messages = [{"role": "user"|"assistant", "content": "..."}]
     """
