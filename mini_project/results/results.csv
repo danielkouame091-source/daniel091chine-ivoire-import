@@ -1,0 +1,8 @@
+model,accuracy,macro_F1,red_recall
+Neural network (MLP),0.706,0.606,0.46
+SVM (RBF),0.658,0.596,0.76
+Random Forest,0.655,0.579,0.56
+Logistic Regression,0.644,0.574,0.71
+Decision Tree,0.6,0.571,0.55
+KNN,0.65,0.537,0.39
+Baseline (always green),0.62,0.255,0.0
